@@ -1,0 +1,56 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+. "$REPO_ROOT/Scripts/git-hooks/colors.sh"
+. "$REPO_ROOT/Scripts/git-hooks/hook-common.sh"
+
+HOOK_NAME="post-commit"
+hook_trace "start argv=$*"
+hook_trace_state
+
+# LFS post-commit
+command -v git-lfs >/dev/null 2>&1 || {
+  printf >&2 "\n%s\n\n" "This repository is configured for Git LFS but 'git-lfs' was not found on your path."
+  exit 2
+}
+git lfs post-commit "$@"
+
+CTX="$(hook_context)"
+if [ "$CTX" = "rebase" ]; then
+  hook_trace "rebase context detected, validating guard (post-commit enforcement)"
+  
+  if ! hook_reset_ledgers_for_new_context_if_needed; then
+    error "Rebase blocked: binary guard ledger system failed to initialize."
+    error "Aborting rebase. Contact Ronnie."
+    git rebase --abort
+    exit 2
+  fi
+  
+  # COMPUTE ONCE - don't call the expensive functions multiple times!
+  remaining="$(hook_list_remaining_required_guarded 2>/dev/null || true)"
+  remaining_clean="$(printf '%s' "$remaining" | sed '/^[[:space:]]*$/d' | tr -d '\r' | sort -u || true)"
+  
+  # Count lines properly
+  if [ -n "$remaining_clean" ]; then
+    remaining_count=$(printf '%s\n' "$remaining_clean" | wc -l | tr -d ' ')
+  else
+    remaining_count=0
+  fi
+  
+  hook_trace "post-commit: remaining count=$remaining_count"
+  
+  if [ -n "${remaining_clean:-}" ]; then
+    error "Rebase blocked: guarded binary file(s) require helper approval."
+    printf '%s\n' "$remaining_clean" | sed 's/^/  - /'
+    echo ""
+    echo "This commit bypassed the guard. Aborting rebase..."
+    hook_print_resolution_instructions
+    git rebase --abort
+    exit 1
+  fi
+  
+  hook_trace "post-commit: guard validation passed (no remaining required files)"
+fi
+
+exit 0
