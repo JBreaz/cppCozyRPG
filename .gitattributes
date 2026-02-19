@@ -1,0 +1,119 @@
+#############################
+# Unreal Engine Git LFS Rules
+#############################
+
+############################################
+# Unreal Engine Native Assets (LFS + Binary)
+############################################
+# Core package files
+*.uasset filter=lfs diff=lfs merge=binary -text
+*.umap   filter=lfs diff=lfs merge=binary -text
+
+# Package sidecars / bulk data
+*.ubulk  filter=lfs diff=lfs merge=binary -text
+*.uexp   filter=lfs diff=lfs merge=binary -text
+*.uptnl  filter=lfs diff=lfs merge=binary -text
+
+# Localization (binary)
+*.locmeta filter=lfs diff=lfs merge=binary -text
+*.locres  filter=lfs diff=lfs merge=binary -text
+
+
+###########################################
+# Media Assets (LFS + Binary, No Merging)
+###########################################
+
+# Audio
+*.aif   filter=lfs diff=lfs merge=binary -text
+*.aiff  filter=lfs diff=lfs merge=binary -text
+*.flac  filter=lfs diff=lfs merge=binary -text
+*.m4a   filter=lfs diff=lfs merge=binary -text
+*.mp3   filter=lfs diff=lfs merge=binary -text
+*.ogg   filter=lfs diff=lfs merge=binary -text
+*.wav   filter=lfs diff=lfs merge=binary -text
+
+# Video
+*.avi   filter=lfs diff=lfs merge=binary -text
+*.m4v   filter=lfs diff=lfs merge=binary -text
+*.mkv   filter=lfs diff=lfs merge=binary -text
+*.mov   filter=lfs diff=lfs merge=binary -text
+*.mp4   filter=lfs diff=lfs merge=binary -text
+*.webm  filter=lfs diff=lfs merge=binary -text
+
+# Images / Textures
+*.dds   filter=lfs diff=lfs merge=binary -text
+*.exr   filter=lfs diff=lfs merge=binary -text
+*.hdr   filter=lfs diff=lfs merge=binary -text
+*.jpeg  filter=lfs diff=lfs merge=binary -text
+*.jpg   filter=lfs diff=lfs merge=binary -text
+*.png   filter=lfs diff=lfs merge=binary -text
+*.psd   filter=lfs diff=lfs merge=binary -text
+*.tga   filter=lfs diff=lfs merge=binary -text
+*.tif   filter=lfs diff=lfs merge=binary -text
+*.tiff  filter=lfs diff=lfs merge=binary -text
+*.webp  filter=lfs diff=lfs merge=binary -text
+
+
+###########################################
+# 3D / DCC Source Assets (LFS + Binary)
+###########################################
+
+# 3D / Mesh Formats
+*.dae   filter=lfs diff=lfs merge=binary -text
+*.fbx   filter=lfs diff=lfs merge=binary -text
+*.obj   filter=lfs diff=lfs merge=binary -text
+*.stl   filter=lfs diff=lfs merge=binary -text
+
+# Scene / Cache Formats
+*.abc   filter=lfs diff=lfs merge=binary -text
+*.blend filter=lfs diff=lfs merge=binary -text
+
+# glTF
+*.glb   filter=lfs diff=lfs merge=binary -text
+*.gltf  filter=lfs diff=lfs merge=binary -text
+
+# USD
+*.usd   filter=lfs diff=lfs merge=binary -text
+*.usda  filter=lfs diff=lfs merge=binary -text
+*.usdc  filter=lfs diff=lfs merge=binary -text
+*.usdz  filter=lfs diff=lfs merge=binary -text
+
+
+###########################################
+# Fonts (LFS + Binary)
+###########################################
+*.otf   filter=lfs diff=lfs merge=binary -text
+*.ttf   filter=lfs diff=lfs merge=binary -text
+*.woff  filter=lfs diff=lfs merge=binary -text
+*.woff2 filter=lfs diff=lfs merge=binary -text
+
+
+###########################################
+# Unreal Project Descriptor Files (Text)
+###########################################
+*.uplugin  text eol=lf
+*.uproject text eol=lf
+
+
+###########################################
+# Source Code & Config (Text Normalization)
+###########################################
+*.cs    text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.ini   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.py    text eol=lf
+*.txt   text eol=lf
+*.xml   text eol=lf
+
+
+###########################################
+# Binary Files (No Merge)
+###########################################
+*.bin binary
+*.dat binary
+*.dll binary
+*.exe binary
+*.lib binary
