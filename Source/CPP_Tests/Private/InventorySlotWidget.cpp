@@ -75,6 +75,12 @@ void UInventorySlotWidget::SetupSlot(UItemDataAsset* InItem, int32 InQuantity, E
 		RarityImage->SetVisibility(InRarityIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 
+	if (ItemCostText)
+	{
+		ItemCostText->SetVisibility(ESlateVisibility::Collapsed);
+		ItemCostText->SetText(FText::GetEmpty());
+	}
+
 	UpdateVisualState();
 }
 
@@ -121,6 +127,21 @@ void UInventorySlotWidget::ResetTradeQuantity()
 	UpdateTradeQuantityVisual();
 }
 
+void UInventorySlotWidget::SetItemCostText(const FText& InCostText)
+{
+	if (!ItemCostText) return;
+
+	if (InCostText.IsEmpty())
+	{
+		ItemCostText->SetVisibility(ESlateVisibility::Collapsed);
+		ItemCostText->SetText(FText::GetEmpty());
+		return;
+	}
+
+	ItemCostText->SetVisibility(ESlateVisibility::HitTestInvisible);
+	ItemCostText->SetText(InCostText);
+}
+
 void UInventorySlotWidget::FocusSlot()
 {
 	APlayerController* PC = GetOwningPlayer();
@@ -153,12 +174,14 @@ void UInventorySlotWidget::NativeOnRemovedFromFocusPath(const FFocusEvent& InFoc
 
 void UInventorySlotWidget::HandleHovered()
 {
+	OnSlotHovered.Broadcast(this);
 	bHasHoverVisual = true;
 	UpdateEffectiveHover();
 }
 
 void UInventorySlotWidget::HandleUnhovered()
 {
+	OnSlotUnhovered.Broadcast(this);
 	bHasHoverVisual = false;
 	UpdateEffectiveHover();
 }
@@ -215,15 +238,6 @@ void UInventorySlotWidget::UpdateEffectiveHover()
 
 	bEffectiveHover = bNewEffectiveHover;
 	UpdateVisualState();
-
-	if (bEffectiveHover)
-	{
-		OnSlotHovered.Broadcast(this);
-	}
-	else
-	{
-		OnSlotUnhovered.Broadcast(this);
-	}
 }
 
 void UInventorySlotWidget::UpdateVisualState()

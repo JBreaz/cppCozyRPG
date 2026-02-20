@@ -183,6 +183,7 @@ private:
 
 	// Hover-driven details
 	UPROPERTY() TWeakObjectPtr<UInventorySlotWidget> HoveredSlotWidget;
+	UPROPERTY() TWeakObjectPtr<UInventorySlotWidget> SelectedPlayerSlotWidget;
 
 	// Merchant context
 	TWeakObjectPtr<ANPCCharacter> ActiveMerchant;
