@@ -19,19 +19,6 @@
 
 #include "InputCoreTypes.h"
 
-static float InferPreferredMultiplier(ANPCCharacter* Merchant, UItemDataAsset* Item, int32 Quantity)
-{
-	if (!Merchant || !Item || Quantity <= 0) return 1.0f;
-
-	const int32 BaseRaw = Item->BaseSellValue * Quantity;
-	if (BaseRaw <= 0) return 1.0f;
-
-	const int32 MerchantValue = Merchant->GetSellValueForItem(Item, Quantity);
-	if (MerchantValue <= 0) return 1.0f;
-
-	return FMath::Max(0.0f, (float)MerchantValue / (float)BaseRaw);
-}
-
 void UPlayerMenuWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -409,11 +396,14 @@ int32 UPlayerMenuWidget::GetRaritySellValue(UItemDataAsset* Item, int32 Quantity
 {
 	if (!Item || Quantity <= 0) return 0;
 
-	const int32 Base = Item->BaseSellValue * Quantity;
-	if (Base <= 0) return 0;
-
+	const int32 BaseUnit = FMath::Max(0, Item->BaseSellValue);
+	if (BaseUnit <= 0) return 0;
 	const float Mult = GetRarityMultiplier(Rarity);
-	return FMath::Max(1, FMath::RoundToInt((float)Base * Mult));
+	if (Mult <= 0.f) return 0;
+
+	int32 UnitValue = FMath::FloorToInt((float)BaseUnit * Mult);
+	UnitValue = FMath::Max(1, UnitValue);
+	return UnitValue * Quantity;
 }
 
 void UPlayerMenuWidget::SetDetailsFromPlayerSlot(UInventorySlotWidget* SlotWidget)
@@ -751,6 +741,20 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 	{
 		if (!Stack.Item || Stack.Quantity <= 0) continue;
 
+		int32 StackSellValue = GetRaritySellValue(Stack.Item, Stack.Quantity, Stack.Rarity);
+		if (bTradeModeEnabled && ActiveMerchant.IsValid())
+		{
+			StackSellValue = ActiveMerchant->GetSellValueForItemRarity(Stack.Item, Stack.Quantity, Stack.Rarity);
+			if (StackSellValue <= 0)
+			{
+				FSellKey UnsellableKey;
+				UnsellableKey.Item = Stack.Item;
+				UnsellableKey.Rarity = Stack.Rarity;
+				SellCart.Remove(UnsellableKey);
+				continue;
+			}
+		}
+
 		UInventorySlotWidget* NewSlotWidget = CreateWidget<UInventorySlotWidget>(GetOwningPlayer(), InventorySlotWidgetClass);
 		if (!NewSlotWidget) continue;
 
@@ -766,14 +770,7 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 		NewSlotWidget->SetupSlot(Stack.Item, Stack.Quantity, Stack.Rarity, GetRarityIcon(Stack.Rarity), GetRarityTint(Stack.Rarity));
 		NewSlotWidget->SetTradeQuantityPickerEnabled(Stack.Quantity > 1);
 		NewSlotWidget->SetTradeModeEnabled(bTradeModeEnabled);
-
-		int32 SellValue = GetRaritySellValue(Stack.Item, Stack.Quantity, Stack.Rarity);
-		if (ActiveMerchant.IsValid())
-		{
-			const float PrefMult = InferPreferredMultiplier(ActiveMerchant.Get(), Stack.Item, Stack.Quantity);
-			SellValue = FMath::Max(1, FMath::RoundToInt((float)SellValue * PrefMult));
-		}
-		NewSlotWidget->SetItemCostText(FText::AsNumber(FMath::Max(0, SellValue)));
+		NewSlotWidget->SetItemCostText(FText::AsNumber(FMath::Max(0, StackSellValue)));
 
 		NewSlotWidget->OnSlotHovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotHovered);
 		NewSlotWidget->OnSlotUnhovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotUnhovered);
@@ -1086,8 +1083,17 @@ bool UPlayerMenuWidget::AdjustSellCartQuantity(UInventorySlotWidget* SlotWidget,
 	}
 
 	int32 ProposedValue = GetRaritySellValue(Item, ProposedQty, Rarity);
-	const float PreferredMultiplier = InferPreferredMultiplier(ActiveMerchant.Get(), Item, ProposedQty);
-	ProposedValue = FMath::Max(1, FMath::RoundToInt((float)ProposedValue * PreferredMultiplier));
+	if (ActiveMerchant.IsValid())
+	{
+		ProposedValue = ActiveMerchant->GetSellValueForItemRarity(Item, ProposedQty, Rarity);
+	}
+
+	if (ProposedValue <= 0)
+	{
+		SellCart.Remove(Key);
+		SlotWidget->SetSelected(false);
+		return true;
+	}
 
 	if (DeltaQty > 0)
 	{
