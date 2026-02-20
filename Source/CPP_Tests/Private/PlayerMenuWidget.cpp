@@ -150,6 +150,7 @@ void UPlayerMenuWidget::SetActiveMerchant(ANPCCharacter* InMerchant)
 
 	// Clear visuals for trade selection
 	const bool bTradeModeEnabled = ActiveMerchant.IsValid();
+	SelectedPlayerSlotWidget = nullptr;
 	for (TWeakObjectPtr<UInventorySlotWidget>& S : VisiblePlayerSlots)
 	{
 		if (!S.IsValid()) continue;
@@ -446,20 +447,9 @@ void UPlayerMenuWidget::SetDetailsFromPlayerSlot(UInventorySlotWidget* SlotWidge
 
 	if (DetailDescriptionText)
 	{
-		// Base * rarity multiplier
-		int32 SellValue = GetRaritySellValue(Item, Qty, Rar);
-
-		// If merchant active, also apply inferred preferred multiplier on top
-		if (ActiveMerchant.IsValid())
-		{
-			const float PrefMult = InferPreferredMultiplier(ActiveMerchant.Get(), Item, Qty);
-			SellValue = FMath::Max(1, FMath::RoundToInt((float)SellValue * PrefMult));
-		}
-
 		const FString Desc = FString::Printf(
-			TEXT("Qty: %d\nSell Value: %d\n\n(No description yet)"),
-			Qty,
-			SellValue
+			TEXT("Qty: %d\n\n(No description yet)"),
+			Qty
 		);
 
 		DetailDescriptionText->SetText(FText::FromString(Desc));
@@ -498,8 +488,7 @@ void UPlayerMenuWidget::SetDetailsFromMerchantSlot(UInventorySlotWidget* SlotWid
 		const FString StockStr = Entry.bInfiniteStock ? TEXT("∞") : FString::FromInt(FMath::Max(0, Stock));
 
 		const FString Desc = FString::Printf(
-			TEXT("Buy Price: %d\nStock: %s\n\n(No description yet)"),
-			Entry.BuyPrice,
+			TEXT("Stock: %s\n\n(No description yet)"),
 			*StockStr
 		);
 
@@ -533,7 +522,14 @@ void UPlayerMenuWidget::ApplyDetails()
 		return;
 	}
 
-	// Hover-only details: no persistent click lock.
+	// In non-trade mode, details default to the selected player slot.
+	if (!ActiveMerchant.IsValid() && SelectedPlayerSlotWidget.IsValid())
+	{
+		SetDetailsFromPlayerSlot(SelectedPlayerSlotWidget.Get());
+		return;
+	}
+
+	// Trade mode stays hover-only.
 	ClearDetails();
 }
 
@@ -560,39 +556,59 @@ void UPlayerMenuWidget::HandlePlayerSlotClicked(UInventorySlotWidget* ClickedWid
 {
 	if (!ClickedWidget) return;
 
-	// In merchant mode, click toggles selection; single-item stacks auto-add qty 1.
-	if (ActiveMerchant.IsValid())
+	if (!ActiveMerchant.IsValid())
 	{
-		const bool bUseQtyPicker = (ClickedWidget->GetQuantity() > 1);
-		ClickedWidget->SetTradeQuantityPickerEnabled(bUseQtyPicker);
-		ClickedWidget->SetTradeModeEnabled(true);
+		const bool bAlreadySelected = (SelectedPlayerSlotWidget.Get() == ClickedWidget);
 
-		const bool bShouldSelect = !ClickedWidget->IsSelected();
-		FSellKey Key;
-		Key.Item = ClickedWidget->GetItem();
-		Key.Rarity = ClickedWidget->GetRarity();
-
-		SellCart.Remove(Key);
-
-		if (bShouldSelect)
+		if (SelectedPlayerSlotWidget.IsValid() && SelectedPlayerSlotWidget.Get() != ClickedWidget)
 		{
-			ClickedWidget->SetSelectedTradeQuantity(0);
-			ClickedWidget->SetSelected(true);
+			SelectedPlayerSlotWidget->SetSelected(false);
+		}
 
-			// Single-item stacks bypass qty picker and immediately become qty 1 in cart.
-			if (!bUseQtyPicker && !AdjustSellCartQuantity(ClickedWidget, +1))
-			{
-				ClickedWidget->SetSelected(false);
-			}
+		if (bAlreadySelected)
+		{
+			ClickedWidget->SetSelected(false);
+			SelectedPlayerSlotWidget = nullptr;
 		}
 		else
 		{
-			ClickedWidget->SetSelected(false);
+			ClickedWidget->SetSelected(true);
+			SelectedPlayerSlotWidget = ClickedWidget;
 		}
 
-		UpdateCurrencyUI();
+		ApplyDetails();
+		return;
 	}
 
+	// In merchant mode, click toggles selection; single-item stacks auto-add qty 1.
+	const bool bUseQtyPicker = (ClickedWidget->GetQuantity() > 1);
+	ClickedWidget->SetTradeQuantityPickerEnabled(bUseQtyPicker);
+	ClickedWidget->SetTradeModeEnabled(true);
+
+	const bool bShouldSelect = !ClickedWidget->IsSelected();
+	FSellKey Key;
+	Key.Item = ClickedWidget->GetItem();
+	Key.Rarity = ClickedWidget->GetRarity();
+
+	SellCart.Remove(Key);
+
+	if (bShouldSelect)
+	{
+		ClickedWidget->SetSelectedTradeQuantity(0);
+		ClickedWidget->SetSelected(true);
+
+		// Single-item stacks bypass qty picker and immediately become qty 1 in cart.
+		if (!bUseQtyPicker && !AdjustSellCartQuantity(ClickedWidget, +1))
+		{
+			ClickedWidget->SetSelected(false);
+		}
+	}
+	else
+	{
+		ClickedWidget->SetSelected(false);
+	}
+
+	UpdateCurrencyUI();
 	ApplyDetails();
 }
 
@@ -692,6 +708,16 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 	// If we rebuild, any hover pointer is stale.
 	HoveredSlotWidget = nullptr;
 
+	const bool bTradeModeEnabled = ActiveMerchant.IsValid();
+	UItemDataAsset* SelectedItemToRestore = nullptr;
+	EItemRarity SelectedRarityToRestore = EItemRarity::Garbage;
+	if (!bTradeModeEnabled && SelectedPlayerSlotWidget.IsValid() && SelectedPlayerSlotWidget->GetItem())
+	{
+		SelectedItemToRestore = SelectedPlayerSlotWidget->GetItem();
+		SelectedRarityToRestore = SelectedPlayerSlotWidget->GetRarity();
+	}
+	SelectedPlayerSlotWidget = nullptr;
+
 	VisiblePlayerSlots.Reset();
 
 	if (!InventoryGrid)
@@ -705,6 +731,7 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 
 	if (!Inventory || !InventorySlotWidgetClass)
 	{
+		SelectedPlayerSlotWidget = nullptr;
 		ClearDetails();
 		return;
 	}
@@ -712,13 +739,13 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 	const TArray<FItemStack>& Items = Inventory->GetItems();
 	if (Items.Num() == 0)
 	{
+		SelectedPlayerSlotWidget = nullptr;
 		ClearDetails();
 		return;
 	}
 
 	const int32 Cols = FMath::Max(1, GridColumns);
 	int32 VisibleIdx = 0;
-	const bool bTradeModeEnabled = ActiveMerchant.IsValid();
 
 	for (const FItemStack& Stack : Items)
 	{
@@ -739,6 +766,15 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 		NewSlotWidget->SetupSlot(Stack.Item, Stack.Quantity, Stack.Rarity, GetRarityIcon(Stack.Rarity), GetRarityTint(Stack.Rarity));
 		NewSlotWidget->SetTradeQuantityPickerEnabled(Stack.Quantity > 1);
 		NewSlotWidget->SetTradeModeEnabled(bTradeModeEnabled);
+
+		int32 SellValue = GetRaritySellValue(Stack.Item, Stack.Quantity, Stack.Rarity);
+		if (ActiveMerchant.IsValid())
+		{
+			const float PrefMult = InferPreferredMultiplier(ActiveMerchant.Get(), Stack.Item, Stack.Quantity);
+			SellValue = FMath::Max(1, FMath::RoundToInt((float)SellValue * PrefMult));
+		}
+		NewSlotWidget->SetItemCostText(FText::AsNumber(FMath::Max(0, SellValue)));
+
 		NewSlotWidget->OnSlotHovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotHovered);
 		NewSlotWidget->OnSlotUnhovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotUnhovered);
 		NewSlotWidget->OnSlotClicked.AddDynamic(this, &UPlayerMenuWidget::HandlePlayerSlotClicked);
@@ -760,7 +796,12 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 		}
 		else
 		{
-			NewSlotWidget->SetSelected(false);
+			const bool bIsSelectedInMenu = (Stack.Item == SelectedItemToRestore && Stack.Rarity == SelectedRarityToRestore);
+			NewSlotWidget->SetSelected(bIsSelectedInMenu);
+			if (bIsSelectedInMenu)
+			{
+				SelectedPlayerSlotWidget = NewSlotWidget;
+			}
 		}
 
 		VisiblePlayerSlots.Add(NewSlotWidget);
@@ -826,6 +867,7 @@ void UPlayerMenuWidget::RefreshMerchantInventoryGrid()
 		);
 		NewMerchantSlotWidget->SetTradeQuantityPickerEnabled(Entry.bInfiniteStock || Entry.Stock > 1);
 		NewMerchantSlotWidget->SetTradeModeEnabled(bTradeModeEnabled);
+		NewMerchantSlotWidget->SetItemCostText(FText::AsNumber(FMath::Max(0, Entry.BuyPrice)));
 
 		NewMerchantSlotWidget->OnSlotHovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotHovered);
 		NewMerchantSlotWidget->OnSlotUnhovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotUnhovered);

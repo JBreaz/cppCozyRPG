@@ -53,6 +53,9 @@ public:
 	void ResetTradeQuantity();
 
 	UFUNCTION(BlueprintCallable, Category="Inventory")
+	void SetItemCostText(const FText& InCostText);
+
+	UFUNCTION(BlueprintCallable, Category="Inventory")
 	void FocusSlot();
 
 	UPROPERTY(BlueprintAssignable) FOnInventorySlotHovered OnSlotHovered;
@@ -67,6 +70,7 @@ protected:
 
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> QtyText = nullptr;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UImage> RarityImage = nullptr;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> ItemCostText = nullptr;
 
 	// This is now a TRUE selected overlay (stays on when selected)
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> SelectedHighlight = nullptr;
