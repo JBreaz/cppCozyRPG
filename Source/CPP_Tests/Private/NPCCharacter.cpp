@@ -1536,15 +1536,16 @@ int32 ANPCCharacter::GetSellValueForItemRarity(const UItemDataAsset* Item, int32
 	const int32 BaseUnit = FMath::Max(0, Item->BaseSellValue);
 	if (BaseUnit <= 0) return 0;
 
-	float Total = (float)BaseUnit * (float)Quantity;
+	const float RarityMult = GetRaritySellMultiplier(Rarity);
+	if (RarityMult <= 0.f) return 0;
 
-	// Apply rarity multiplier
-	Total *= GetRaritySellMultiplier(Rarity);
+	const float PreferredMult = GetPreferredSellMultiplier(Item);
+	if (PreferredMult <= 0.f) return 0;
 
-	// Apply preferred multiplier (per item if configured)
-	Total *= GetPreferredSellMultiplier(Item);
-
-	return FMath::Max(1, FMath::RoundToInt(Total));
+	const float UnitRaw = (float)BaseUnit * RarityMult * PreferredMult;
+	int32 UnitValue = FMath::FloorToInt(UnitRaw);
+	UnitValue = FMath::Max(1, UnitValue);
+	return UnitValue * Quantity;
 }
 
 TArray<FMerchantInventoryEntry> ANPCCharacter::GetUnlockedMerchantInventory() const
