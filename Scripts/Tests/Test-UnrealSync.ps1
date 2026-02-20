@@ -2,7 +2,7 @@
 param(
   [switch]$NoCleanup,
   [switch]$FailFast,
-  [string]$ReturnBranch = "feat/add-to-hooks"
+  [string]$ReturnBranch = "feat/add-hooks"
 )
 
 $ErrorActionPreference = "Stop"
