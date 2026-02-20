@@ -157,6 +157,17 @@ function Assert-OutputContains {
   Fail $Name "missing expected text: $Needle"
 }
 
+function Assert-Condition {
+  param(
+    [string]$Name,
+    [bool]$Condition,
+    [string]$PassDetail = "condition is true",
+    [string]$FailDetail = "condition is false"
+  )
+  if ($Condition) { Pass $Name $PassDetail; return }
+  Fail $Name $FailDetail
+}
+
 function Restore-RepoState {
   if ($script:CleanupRan) { return }
   $script:CleanupRan = $true
@@ -276,7 +287,39 @@ try {
     }
   }
 
-  Step "Case 5: Structural change detection with DryRun"
+  Step "Case 5: Hook suppression contract avoids duplicate UE Sync runs"
+  $postCheckoutPath = Join-Path $repoRoot ".githooks\post-checkout"
+  $hookCommonPath = Join-Path $repoRoot "Scripts\git-hooks\hook-common.sh"
+
+  $postCheckoutText = Get-Content -LiteralPath $postCheckoutPath -Raw
+  $hookCommonText = Get-Content -LiteralPath $hookCommonPath -Raw
+
+  Assert-Condition `
+    -Name "UE Sync case 5 hook-common has UE_SYNC_SUPPRESS gate" `
+    -Condition (
+      $hookCommonText -match 'case "\$\{UE_SYNC_SUPPRESS:-0\}"' -and
+      $hookCommonText -match 'skip UnrealSync: suppressed by UE_SYNC_SUPPRESS'
+    ) `
+    -FailDetail "hook-common.sh missing UE_SYNC_SUPPRESS guard in hook_run_unrealsync"
+
+  Assert-Condition `
+    -Name "UE Sync case 5 post-checkout suppresses nested fetch/pull/stash commands" `
+    -Condition (
+      $postCheckoutText -match 'UE_SYNC_SUPPRESS=1 git fetch --all --prune --quiet' -and
+      $postCheckoutText -match 'UE_SYNC_SUPPRESS=1 git pull --ff-only' -and
+      $postCheckoutText -match 'UE_SYNC_SUPPRESS=1 git stash push -u' -and
+      $postCheckoutText -match 'UE_SYNC_SUPPRESS=1 git stash pop "\$STASH_REF"'
+    ) `
+    -FailDetail "post-checkout missing one or more UE_SYNC_SUPPRESS-prefixed nested git commands"
+
+  $runCount = [regex]::Matches($postCheckoutText, 'hook_run_unrealsync\s+"').Count
+  Assert-Condition `
+    -Name "UE Sync case 5 post-checkout calls hook_run_unrealsync once" `
+    -Condition ($runCount -eq 1) `
+    -PassDetail "hook_run_unrealsync calls=$runCount" `
+    -FailDetail "expected 1 hook_run_unrealsync call in post-checkout, found $runCount"
+
+  Step "Case 6: Structural change detection with DryRun"
   $structRel = "Source/Ghost_Game/UE_Sync_TestTmp_$((Get-Date).ToString('HHmmss')).cpp"
   $structAbs = Join-Path $repoRoot $structRel
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $structAbs) | Out-Null
@@ -299,12 +342,12 @@ try {
     "-DryRun"
   )
 
-  Assert-CodeZero "UE Sync case 5 exit code" $res.Code
-  Assert-OutputContains "UE Sync case 5 detects structural triggers" $res.Output "Structural C++ changes detected"
-  Assert-OutputContains "UE Sync case 5 non-interactive path" $res.Output "Non-interactive execution detected; proceeding without confirmation."
-  Assert-OutputContains "UE Sync case 5 dry-run path" $res.Output "DryRun enabled. Skipping cleanup/regeneration/build."
+  Assert-CodeZero "UE Sync case 6 exit code" $res.Code
+  Assert-OutputContains "UE Sync case 6 detects structural triggers" $res.Output "Structural C++ changes detected"
+  Assert-OutputContains "UE Sync case 6 non-interactive path" $res.Output "Non-interactive execution detected; proceeding without confirmation."
+  Assert-OutputContains "UE Sync case 6 dry-run path" $res.Output "DryRun enabled. Skipping cleanup/regeneration/build."
 
-  Step "Case 6: Locked file in cleanup is handled gracefully (non-interactive)"
+  Step "Case 7: Locked file in cleanup is handled gracefully (non-interactive)"
   $lockDir = Join-Path $repoRoot "Intermediate\UE_Sync_LockTest"
   $lockPath = Join-Path $lockDir "Locked.txt"
   New-Item -ItemType Directory -Force -Path $lockDir | Out-Null
@@ -319,8 +362,8 @@ try {
       "-NoBuild",
       "-NonInteractive"
     )
-    Assert-CodeZero "UE Sync case 6 exit code" $res.Code
-    Assert-OutputContains "UE Sync case 6 lock warning" $res.Output "Could not clean 'Intermediate' because a file is in use."
+    Assert-CodeZero "UE Sync case 7 exit code" $res.Code
+    Assert-OutputContains "UE Sync case 7 lock warning" $res.Output "Could not clean 'Intermediate' because a file is in use."
   }
   finally {
     if ($fs) { $fs.Dispose() }

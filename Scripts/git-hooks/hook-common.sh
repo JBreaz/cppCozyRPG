@@ -842,6 +842,15 @@ hook_working_tree_is_lfs_pointer() {
 hook_run_unrealsync() {
   old="$1"; new="$2"; flag="$3"
 
+  # Allow outer hooks to suppress nested UnrealSync executions while they run
+  # internal git commands (e.g., post-checkout -> git pull -> post-merge).
+  case "${UE_SYNC_SUPPRESS:-0}" in
+    1|true|TRUE|yes|YES)
+      hook_trace "skip UnrealSync: suppressed by UE_SYNC_SUPPRESS"
+      return 0
+      ;;
+  esac
+
   # Avoid any Unreal sync noise/work while Git is actively resolving merge/rebase state.
   if hook_is_merge_in_progress || hook_is_rebase_in_progress; then
     hook_trace "skip UnrealSync: merge/rebase in progress"
