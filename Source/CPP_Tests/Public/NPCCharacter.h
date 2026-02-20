@@ -171,6 +171,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="NPC|Merchant")
 	bool TrySellToPlayer(UItemDataAsset* Item, int32 Quantity, int32& OutCost);
 
+	// Commit the stock/currency mutation after payment has succeeded.
+	UFUNCTION(BlueprintCallable, Category="NPC|Merchant")
+	bool CompleteSellToPlayer(UItemDataAsset* Item, int32 Quantity, int32 PaidCost);
+
 	UFUNCTION(BlueprintCallable, Category="NPC|Merchant")
 	TArray<FMerchantInventoryEntry> GetUnlockedMerchantInventory() const;
 

@@ -15,6 +15,8 @@ class UWidget;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventorySlotHovered, UInventorySlotWidget*, SlotWidget);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventorySlotUnhovered, UInventorySlotWidget*, SlotWidget);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventorySlotClicked, UInventorySlotWidget*, SlotWidget);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventorySlotAddClicked, UInventorySlotWidget*, SlotWidget);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventorySlotSubClicked, UInventorySlotWidget*, SlotWidget);
 
 UCLASS()
 class CPP_TESTS_API UInventorySlotWidget : public UUserWidget
@@ -35,12 +37,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Inventory")
 	bool IsSelected() const { return bSelected; }
 
+	UFUNCTION(BlueprintCallable, Category="Inventory|Trade")
+	void SetTradeModeEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category="Inventory|Trade")
+	void SetTradeQuantityPickerEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category="Inventory|Trade")
+	void SetSelectedTradeQuantity(int32 NewQty);
+
+	UFUNCTION(BlueprintCallable, Category="Inventory|Trade")
+	int32 GetSelectedTradeQuantity() const { return SelectedTradeQuantity; }
+
+	UFUNCTION(BlueprintCallable, Category="Inventory|Trade")
+	void ResetTradeQuantity();
+
 	UFUNCTION(BlueprintCallable, Category="Inventory")
 	void FocusSlot();
 
 	UPROPERTY(BlueprintAssignable) FOnInventorySlotHovered OnSlotHovered;
 	UPROPERTY(BlueprintAssignable) FOnInventorySlotUnhovered OnSlotUnhovered;
 	UPROPERTY(BlueprintAssignable) FOnInventorySlotClicked OnSlotClicked;
+	UPROPERTY(BlueprintAssignable) FOnInventorySlotAddClicked OnSlotAddClicked;
+	UPROPERTY(BlueprintAssignable) FOnInventorySlotSubClicked OnSlotSubClicked;
 
 protected:
 	UPROPERTY(meta=(BindWidget)) TObjectPtr<UButton> SlotButton = nullptr;
@@ -51,6 +70,11 @@ protected:
 
 	// This is now a TRUE selected overlay (stays on when selected)
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> SelectedHighlight = nullptr;
+
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> HB_QtySelection = nullptr;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> BTN_Add = nullptr;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> BTN_Sub = nullptr;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> SellQtyText = nullptr;
 
 	virtual void NativeOnInitialized() override;
 
@@ -63,6 +87,9 @@ private:
 	UPROPERTY() EItemRarity Rarity = EItemRarity::Garbage;
 
 	UPROPERTY() bool bSelected = false;
+	UPROPERTY() bool bTradeModeEnabled = false;
+	UPROPERTY() bool bTradeQuantityPickerEnabled = true;
+	UPROPERTY() int32 SelectedTradeQuantity = 0;
 
 	UPROPERTY() bool bHasFocusVisual = false;
 	UPROPERTY() bool bHasHoverVisual = false;
@@ -82,7 +109,10 @@ private:
 	UFUNCTION() void HandleHovered();
 	UFUNCTION() void HandleUnhovered();
 	UFUNCTION() void HandleClicked();
+	UFUNCTION() void HandleAddClicked();
+	UFUNCTION() void HandleSubClicked();
 
+	void UpdateTradeQuantityVisual();
 	void UpdateEffectiveHover();
 	void UpdateVisualState();
 };

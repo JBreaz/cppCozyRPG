@@ -149,13 +149,19 @@ void UPlayerMenuWidget::SetActiveMerchant(ANPCCharacter* InMerchant)
 	BuyCart.Reset();
 
 	// Clear visuals for trade selection
+	const bool bTradeModeEnabled = ActiveMerchant.IsValid();
 	for (TWeakObjectPtr<UInventorySlotWidget>& S : VisiblePlayerSlots)
 	{
-		if (S.IsValid()) S->SetSelected(false);
+		if (!S.IsValid()) continue;
+		S->SetTradeQuantityPickerEnabled(S->GetQuantity() > 1);
+		S->SetTradeModeEnabled(bTradeModeEnabled);
+		S->SetSelected(false);
 	}
 	for (TWeakObjectPtr<UInventorySlotWidget>& S : VisibleMerchantSlots)
 	{
-		if (S.IsValid()) S->SetSelected(false);
+		if (!S.IsValid()) continue;
+		S->SetTradeModeEnabled(bTradeModeEnabled);
+		S->SetSelected(false);
 	}
 
 	// Clear hover to prevent stale pointers overriding details
@@ -475,8 +481,10 @@ void UPlayerMenuWidget::SetDetailsFromMerchantSlot(UInventorySlotWidget* SlotWid
 
 	if (DetailRarityImage)
 	{
-		DetailRarityImage->SetBrushFromTexture(nullptr, true);
-		DetailRarityImage->SetVisibility(ESlateVisibility::Hidden);
+		UTexture2D* RarityIconTexture = GetRarityIcon(EItemRarity::Acceptable);
+		DetailRarityImage->SetBrushFromTexture(RarityIconTexture, true);
+		DetailRarityImage->SetColorAndOpacity(GetRarityTint(EItemRarity::Acceptable));
+		DetailRarityImage->SetVisibility(RarityIconTexture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 
 	if (DetailNameText)
@@ -525,25 +533,7 @@ void UPlayerMenuWidget::ApplyDetails()
 		return;
 	}
 
-	// If no hover, use detail-lock selection
-	if (DetailLockedSlotWidget.IsValid())
-	{
-		const int32 MerchantIdx = VisibleMerchantSlots.IndexOfByPredicate([this](const TWeakObjectPtr<UInventorySlotWidget>& W)
-		{
-			return W.Get() == DetailLockedSlotWidget.Get();
-		});
-
-		if (ActiveMerchant.IsValid() && MerchantIdx != INDEX_NONE && CachedMerchantEntries.IsValidIndex(MerchantIdx))
-		{
-			SetDetailsFromMerchantSlot(DetailLockedSlotWidget.Get(), CachedMerchantEntries[MerchantIdx]);
-			return;
-		}
-
-		SetDetailsFromPlayerSlot(DetailLockedSlotWidget.Get());
-		return;
-	}
-
-	// Nothing selected, nothing hovered => hide details panel
+	// Hover-only details: no persistent click lock.
 	ClearDetails();
 }
 
@@ -570,39 +560,67 @@ void UPlayerMenuWidget::HandlePlayerSlotClicked(UInventorySlotWidget* ClickedWid
 {
 	if (!ClickedWidget) return;
 
-	// Detail lock toggling: clicking the same locked item clears lock
-	if (DetailLockedSlotWidget.Get() == ClickedWidget)
-	{
-		DetailLockedSlotWidget = nullptr;
-	}
-	else
-	{
-		DetailLockedSlotWidget = ClickedWidget;
-	}
-
-	// In merchant mode, clicking player slot toggles SELL cart selection
+	// In merchant mode, click toggles selection; single-item stacks auto-add qty 1.
 	if (ActiveMerchant.IsValid())
 	{
-		ToggleSellFromPlayerSlot(ClickedWidget);
+		const bool bUseQtyPicker = (ClickedWidget->GetQuantity() > 1);
+		ClickedWidget->SetTradeQuantityPickerEnabled(bUseQtyPicker);
+		ClickedWidget->SetTradeModeEnabled(true);
+
+		const bool bShouldSelect = !ClickedWidget->IsSelected();
+		FSellKey Key;
+		Key.Item = ClickedWidget->GetItem();
+		Key.Rarity = ClickedWidget->GetRarity();
+
+		SellCart.Remove(Key);
+
+		if (bShouldSelect)
+		{
+			ClickedWidget->SetSelectedTradeQuantity(0);
+			ClickedWidget->SetSelected(true);
+
+			// Single-item stacks bypass qty picker and immediately become qty 1 in cart.
+			if (!bUseQtyPicker && !AdjustSellCartQuantity(ClickedWidget, +1))
+			{
+				ClickedWidget->SetSelected(false);
+			}
+		}
+		else
+		{
+			ClickedWidget->SetSelected(false);
+		}
+
 		UpdateCurrencyUI();
 	}
 
 	ApplyDetails();
 }
 
-void UPlayerMenuWidget::HandleMerchantSlotClicked(UInventorySlotWidget* ClickedWidget)
+void UPlayerMenuWidget::HandlePlayerSlotAddClicked(UInventorySlotWidget* ClickedWidget)
 {
 	if (!ClickedWidget) return;
 
-	// Detail lock toggling
-	if (DetailLockedSlotWidget.Get() == ClickedWidget)
+	if (AdjustSellCartQuantity(ClickedWidget, +1))
 	{
-		DetailLockedSlotWidget = nullptr;
+		UpdateCurrencyUI();
+		ApplyDetails();
 	}
-	else
+}
+
+void UPlayerMenuWidget::HandlePlayerSlotSubClicked(UInventorySlotWidget* ClickedWidget)
+{
+	if (!ClickedWidget) return;
+
+	if (AdjustSellCartQuantity(ClickedWidget, -1))
 	{
-		DetailLockedSlotWidget = ClickedWidget;
+		UpdateCurrencyUI();
+		ApplyDetails();
 	}
+}
+
+void UPlayerMenuWidget::HandleMerchantSlotClicked(UInventorySlotWidget* ClickedWidget)
+{
+	if (!ClickedWidget) return;
 
 	if (ActiveMerchant.IsValid())
 	{
@@ -611,14 +629,60 @@ void UPlayerMenuWidget::HandleMerchantSlotClicked(UInventorySlotWidget* ClickedW
 			return W.Get() == ClickedWidget;
 		});
 
-		if (Idx != INDEX_NONE)
+		bool bUseQtyPicker = true;
+		if (CachedMerchantEntries.IsValidIndex(Idx))
 		{
-			CycleBuyFromMerchantSlot(Idx);
-			UpdateCurrencyUI();
+			const FMerchantInventoryEntry& Entry = CachedMerchantEntries[Idx];
+			bUseQtyPicker = (Entry.bInfiniteStock || Entry.Stock > 1);
 		}
+
+		ClickedWidget->SetTradeQuantityPickerEnabled(bUseQtyPicker);
+		ClickedWidget->SetTradeModeEnabled(true);
+		const bool bShouldSelect = !ClickedWidget->IsSelected();
+		BuyCart.Remove(ClickedWidget->GetItem());
+
+		if (bShouldSelect)
+		{
+			ClickedWidget->SetSelectedTradeQuantity(0);
+			ClickedWidget->SetSelected(true);
+
+			// Single-stock entries bypass qty picker and immediately become qty 1 in cart.
+			if (!bUseQtyPicker && !AdjustBuyCartQuantity(ClickedWidget, +1))
+			{
+				ClickedWidget->SetSelected(false);
+			}
+		}
+		else
+		{
+			ClickedWidget->SetSelected(false);
+		}
+
+		UpdateCurrencyUI();
 	}
 
 	ApplyDetails();
+}
+
+void UPlayerMenuWidget::HandleMerchantSlotAddClicked(UInventorySlotWidget* ClickedWidget)
+{
+	if (!ClickedWidget) return;
+
+	if (AdjustBuyCartQuantity(ClickedWidget, +1))
+	{
+		UpdateCurrencyUI();
+		ApplyDetails();
+	}
+}
+
+void UPlayerMenuWidget::HandleMerchantSlotSubClicked(UInventorySlotWidget* ClickedWidget)
+{
+	if (!ClickedWidget) return;
+
+	if (AdjustBuyCartQuantity(ClickedWidget, -1))
+	{
+		UpdateCurrencyUI();
+		ApplyDetails();
+	}
 }
 
 void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
@@ -627,15 +691,6 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 
 	// If we rebuild, any hover pointer is stale.
 	HoveredSlotWidget = nullptr;
-
-	// Cache locked selection so we can restore it to the newly created widget instance.
-	UItemDataAsset* LockedItemToRestore = nullptr;
-	EItemRarity LockedRarityToRestore = EItemRarity::Garbage;
-	if (DetailLockedSlotWidget.IsValid() && DetailLockedSlotWidget->GetItem())
-	{
-		LockedItemToRestore = DetailLockedSlotWidget->GetItem();
-		LockedRarityToRestore = DetailLockedSlotWidget->GetRarity();
-	}
 
 	VisiblePlayerSlots.Reset();
 
@@ -663,6 +718,7 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 
 	const int32 Cols = FMath::Max(1, GridColumns);
 	int32 VisibleIdx = 0;
+	const bool bTradeModeEnabled = ActiveMerchant.IsValid();
 
 	for (const FItemStack& Stack : Items)
 	{
@@ -681,18 +737,26 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 		}
 
 		NewSlotWidget->SetupSlot(Stack.Item, Stack.Quantity, Stack.Rarity, GetRarityIcon(Stack.Rarity), GetRarityTint(Stack.Rarity));
+		NewSlotWidget->SetTradeQuantityPickerEnabled(Stack.Quantity > 1);
+		NewSlotWidget->SetTradeModeEnabled(bTradeModeEnabled);
 		NewSlotWidget->OnSlotHovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotHovered);
 		NewSlotWidget->OnSlotUnhovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotUnhovered);
 		NewSlotWidget->OnSlotClicked.AddDynamic(this, &UPlayerMenuWidget::HandlePlayerSlotClicked);
+		NewSlotWidget->OnSlotAddClicked.AddDynamic(this, &UPlayerMenuWidget::HandlePlayerSlotAddClicked);
+		NewSlotWidget->OnSlotSubClicked.AddDynamic(this, &UPlayerMenuWidget::HandlePlayerSlotSubClicked);
 
-		// If in sell cart, keep selected visual
-		if (ActiveMerchant.IsValid())
+		// Restore cart-backed selected state and selected quantity in trade mode.
+		if (bTradeModeEnabled)
 		{
 			FSellKey Key;
 			Key.Item = Stack.Item;
 			Key.Rarity = Stack.Rarity;
 
-			NewSlotWidget->SetSelected(SellCart.Contains(Key));
+			const FSellLine* ExistingLine = SellCart.Find(Key);
+			const int32 RestoredQty = ExistingLine ? FMath::Max(0, ExistingLine->Quantity) : 0;
+
+			NewSlotWidget->SetSelectedTradeQuantity(RestoredQty);
+			NewSlotWidget->SetSelected(RestoredQty > 0);
 		}
 		else
 		{
@@ -703,21 +767,6 @@ void UPlayerMenuWidget::RefreshPlayerInventoryGrid()
 		VisibleIdx++;
 	}
 
-	// Restore locked selection to the NEW widget instance if possible
-	if (LockedItemToRestore)
-	{
-		DetailLockedSlotWidget = nullptr;
-		for (const TWeakObjectPtr<UInventorySlotWidget>& W : VisiblePlayerSlots)
-		{
-			if (!W.IsValid()) continue;
-			if (W->GetItem() == LockedItemToRestore && W->GetRarity() == LockedRarityToRestore)
-			{
-				DetailLockedSlotWidget = W.Get();
-				break;
-			}
-		}
-	}
-
 	EnsureInventoryFocus();
 	ApplyDetails();
 }
@@ -726,21 +775,6 @@ void UPlayerMenuWidget::RefreshMerchantInventoryGrid()
 {
 	// If we rebuild, any hover pointer is stale.
 	HoveredSlotWidget = nullptr;
-
-	// Cache if the locked widget was a merchant slot so we can restore it.
-	UItemDataAsset* LockedMerchantItemToRestore = nullptr;
-	if (DetailLockedSlotWidget.IsValid())
-	{
-		const bool bLockedWasMerchant = VisibleMerchantSlots.ContainsByPredicate([this](const TWeakObjectPtr<UInventorySlotWidget>& W)
-		{
-			return W.Get() == DetailLockedSlotWidget.Get();
-		});
-
-		if (bLockedWasMerchant)
-		{
-			LockedMerchantItemToRestore = DetailLockedSlotWidget->GetItem();
-		}
-	}
 
 	VisibleMerchantSlots.Reset();
 	CachedMerchantEntries.Reset();
@@ -762,6 +796,7 @@ void UPlayerMenuWidget::RefreshMerchantInventoryGrid()
 
 	const int32 Cols = FMath::Max(1, GridColumns);
 	int32 VisibleIdx = 0;
+	const bool bTradeModeEnabled = ActiveMerchant.IsValid();
 
 	for (const FMerchantInventoryEntry& Entry : CachedMerchantEntries)
 	{
@@ -782,33 +817,30 @@ void UPlayerMenuWidget::RefreshMerchantInventoryGrid()
 		// Show stock in QtyText (hide if 1 or infinite)
 		const int32 DisplayQty = Entry.bInfiniteStock ? 1 : FMath::Max(0, Entry.Stock);
 
-		NewMerchantSlotWidget->SetupSlot(Entry.Item, DisplayQty, EItemRarity::Acceptable, nullptr, FLinearColor::White);
+		NewMerchantSlotWidget->SetupSlot(
+			Entry.Item,
+			DisplayQty,
+			EItemRarity::Acceptable,
+			GetRarityIcon(EItemRarity::Acceptable),
+			GetRarityTint(EItemRarity::Acceptable)
+		);
+		NewMerchantSlotWidget->SetTradeQuantityPickerEnabled(Entry.bInfiniteStock || Entry.Stock > 1);
+		NewMerchantSlotWidget->SetTradeModeEnabled(bTradeModeEnabled);
 
 		NewMerchantSlotWidget->OnSlotHovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotHovered);
 		NewMerchantSlotWidget->OnSlotUnhovered.AddDynamic(this, &UPlayerMenuWidget::HandleSlotUnhovered);
 		NewMerchantSlotWidget->OnSlotClicked.AddDynamic(this, &UPlayerMenuWidget::HandleMerchantSlotClicked);
+		NewMerchantSlotWidget->OnSlotAddClicked.AddDynamic(this, &UPlayerMenuWidget::HandleMerchantSlotAddClicked);
+		NewMerchantSlotWidget->OnSlotSubClicked.AddDynamic(this, &UPlayerMenuWidget::HandleMerchantSlotSubClicked);
 
-		// Selected visual if in buy cart
-		const bool bInBuy = BuyCart.Contains(Entry.Item);
-		NewMerchantSlotWidget->SetSelected(bInBuy);
+		// Restore cart-backed selected state and selected quantity in trade mode.
+		const FBuyLine* ExistingLine = BuyCart.Find(Entry.Item);
+		const int32 RestoredQty = ExistingLine ? FMath::Max(0, ExistingLine->Quantity) : 0;
+		NewMerchantSlotWidget->SetSelectedTradeQuantity(RestoredQty);
+		NewMerchantSlotWidget->SetSelected(RestoredQty > 0);
 
 		VisibleMerchantSlots.Add(NewMerchantSlotWidget);
 		VisibleIdx++;
-	}
-
-	// Restore locked selection to the NEW merchant widget instance if possible
-	if (LockedMerchantItemToRestore)
-	{
-		DetailLockedSlotWidget = nullptr;
-		for (const TWeakObjectPtr<UInventorySlotWidget>& W : VisibleMerchantSlots)
-		{
-			if (!W.IsValid()) continue;
-			if (W->GetItem() == LockedMerchantItemToRestore)
-			{
-				DetailLockedSlotWidget = W.Get();
-				break;
-			}
-		}
 	}
 }
 
@@ -966,108 +998,159 @@ void UPlayerMenuWidget::UpdateCurrencyUI()
 	UpdateMerchantModeVisibility();
 }
 
-bool UPlayerMenuWidget::ToggleSellFromPlayerSlot(UInventorySlotWidget* SlotWidget)
+bool UPlayerMenuWidget::AdjustSellCartQuantity(UInventorySlotWidget* SlotWidget, int32 DeltaQty)
 {
-	if (!ActiveMerchant.IsValid() || !Stats || !SlotWidget || !SlotWidget->GetItem()) return false;
+	if (!ActiveMerchant.IsValid() || !Stats || !SlotWidget || !SlotWidget->GetItem() || DeltaQty == 0) return false;
+	if (!SlotWidget->IsSelected()) return false;
 
 	UItemDataAsset* Item = SlotWidget->GetItem();
-	const int32 Qty = SlotWidget->GetQuantity();
-	const EItemRarity Rar = SlotWidget->GetRarity();
+	const EItemRarity Rarity = SlotWidget->GetRarity();
+	const int32 OwnedQty = FMath::Max(0, SlotWidget->GetQuantity());
+	if (OwnedQty <= 0) return false;
 
-	FSellKey Key; Key.Item = Item; Key.Rarity = Rar;
+	FSellKey Key;
+	Key.Item = Item;
+	Key.Rarity = Rarity;
 
-	// If already selected => remove
-	if (SellCart.Contains(Key))
+	const FSellLine* ExistingLine = SellCart.Find(Key);
+	const int32 CurrentQty = ExistingLine ? FMath::Max(0, ExistingLine->Quantity) : FMath::Max(0, SlotWidget->GetSelectedTradeQuantity());
+
+	if (DeltaQty < 0 && CurrentQty <= 0)
 	{
 		SellCart.Remove(Key);
 		SlotWidget->SetSelected(false);
 		return true;
 	}
 
-	// Base rarity value
-	int32 Value = GetRaritySellValue(Item, Qty, Rar);
-
-	// Apply preferred multiplier on top (inferred from merchant’s base calc)
-	const float PrefMult = InferPreferredMultiplier(ActiveMerchant.Get(), Item, Qty);
-	Value = FMath::Max(1, FMath::RoundToInt((float)Value * PrefMult));
-
-	if (Value <= 0) return false;
-
-	// Affordability check against preview (merchant must not go below 0)
-	int32 SellTotal = 0, BuyTotal = 0, PlayerPrev = 0, MerchantPrev = 0;
-	RecomputeTradePreview(SellTotal, BuyTotal, PlayerPrev, MerchantPrev);
-
-	const int32 MerchantStart = ActiveMerchant->GetCurrentCurrency();
-	const int32 ProspectiveMerchant = MerchantStart - (SellTotal + Value) + BuyTotal;
-	if (ProspectiveMerchant < 0)
+	int32 ProposedQty = CurrentQty + DeltaQty;
+	if (DeltaQty > 0)
 	{
-		return false;
+		ProposedQty = FMath::Min(ProposedQty, OwnedQty);
+		if (ProposedQty == CurrentQty)
+		{
+			return false;
+		}
+	}
+	else
+	{
+		ProposedQty = FMath::Max(0, ProposedQty);
 	}
 
-	FSellLine Line;
-	Line.Item = Item;
-	Line.Quantity = Qty;
-	Line.Rarity = Rar;
-	Line.Value = Value;
+	if (ProposedQty <= 0)
+	{
+		SellCart.Remove(Key);
+		SlotWidget->SetSelected(false);
+		return true;
+	}
 
-	SellCart.Add(Key, Line);
-	SlotWidget->SetSelected(true);
-	return true;
+	int32 ProposedValue = GetRaritySellValue(Item, ProposedQty, Rarity);
+	const float PreferredMultiplier = InferPreferredMultiplier(ActiveMerchant.Get(), Item, ProposedQty);
+	ProposedValue = FMath::Max(1, FMath::RoundToInt((float)ProposedValue * PreferredMultiplier));
+
+	if (DeltaQty > 0)
+	{
+		// Keep merchant preview currency >= 0.
+		int32 SellTotal = 0, BuyTotal = 0, PlayerPrev = 0, MerchantPrev = 0;
+		RecomputeTradePreview(SellTotal, BuyTotal, PlayerPrev, MerchantPrev);
+
+		const int32 CurrentLineValue = ExistingLine ? FMath::Max(0, ExistingLine->Value) : 0;
+		const int32 SellWithoutThis = FMath::Max(0, SellTotal - CurrentLineValue);
+		const int32 MerchantStart = ActiveMerchant->GetCurrentCurrency();
+		const int32 ProspectiveMerchant = MerchantStart - (SellWithoutThis + ProposedValue) + BuyTotal;
+		if (ProspectiveMerchant < 0)
+		{
+			return false;
+		}
+	}
+
+	FSellLine NewLine;
+	NewLine.Item = Item;
+	NewLine.Quantity = ProposedQty;
+	NewLine.Rarity = Rarity;
+	NewLine.Value = ProposedValue;
+	SellCart.Add(Key, NewLine);
+
+	SlotWidget->SetSelectedTradeQuantity(ProposedQty);
+	return ProposedQty != CurrentQty;
 }
 
-bool UPlayerMenuWidget::CycleBuyFromMerchantSlot(int32 MerchantSlotIndex)
+bool UPlayerMenuWidget::AdjustBuyCartQuantity(UInventorySlotWidget* SlotWidget, int32 DeltaQty)
 {
-	if (!ActiveMerchant.IsValid() || !Stats) return false;
+	if (!ActiveMerchant.IsValid() || !Stats || !SlotWidget || !SlotWidget->GetItem() || DeltaQty == 0) return false;
+	if (!SlotWidget->IsSelected()) return false;
+
+	const int32 MerchantSlotIndex = VisibleMerchantSlots.IndexOfByPredicate([SlotWidget](const TWeakObjectPtr<UInventorySlotWidget>& W)
+	{
+		return W.Get() == SlotWidget;
+	});
 	if (!CachedMerchantEntries.IsValidIndex(MerchantSlotIndex)) return false;
 
 	const FMerchantInventoryEntry& Entry = CachedMerchantEntries[MerchantSlotIndex];
 	if (!Entry.Item) return false;
 
 	const int32 UnitPrice = FMath::Max(0, Entry.BuyPrice);
-
 	const int32 MaxQty = Entry.bInfiniteStock ? 99 : FMath::Max(0, Entry.Stock);
-	if (MaxQty <= 0 && !Entry.bInfiniteStock) return false;
-
-	FBuyLine* Existing = BuyCart.Find(Entry.Item);
-	const int32 CurQty = Existing ? Existing->Quantity : 0;
-
-	int32 NextQty = CurQty + 1;
-	if (!Entry.bInfiniteStock && NextQty > MaxQty)
+	if (MaxQty <= 0)
 	{
-		// cycle off
 		BuyCart.Remove(Entry.Item);
-		if (VisibleMerchantSlots.IsValidIndex(MerchantSlotIndex) && VisibleMerchantSlots[MerchantSlotIndex].IsValid())
-		{
-			VisibleMerchantSlots[MerchantSlotIndex]->SetSelected(false);
-		}
+		SlotWidget->SetSelected(false);
 		return true;
 	}
 
-	// affordability check using preview (player must not go below 0)
-	int32 SellTotal = 0, BuyTotal = 0, PlayerPrev = 0, MerchantPrev = 0;
-	RecomputeTradePreview(SellTotal, BuyTotal, PlayerPrev, MerchantPrev);
+	const FBuyLine* ExistingLine = BuyCart.Find(Entry.Item);
+	const int32 CurrentQty = ExistingLine ? FMath::Max(0, ExistingLine->Quantity) : FMath::Max(0, SlotWidget->GetSelectedTradeQuantity());
 
-	const int32 PlayerStart = Stats->GetCurrency();
-	const int32 ProspectiveBuyTotal = BuyTotal + UnitPrice;
-	const int32 ProspectivePlayer = PlayerStart + SellTotal - ProspectiveBuyTotal;
-	if (ProspectivePlayer < 0)
+	if (DeltaQty < 0 && CurrentQty <= 0)
 	{
-		return false;
+		BuyCart.Remove(Entry.Item);
+		SlotWidget->SetSelected(false);
+		return true;
+	}
+
+	int32 ProposedQty = CurrentQty + DeltaQty;
+	if (DeltaQty > 0)
+	{
+		ProposedQty = FMath::Min(ProposedQty, MaxQty);
+		if (ProposedQty == CurrentQty)
+		{
+			return false;
+		}
+
+		// Keep player preview currency >= 0.
+		int32 SellTotal = 0, BuyTotal = 0, PlayerPrev = 0, MerchantPrev = 0;
+		RecomputeTradePreview(SellTotal, BuyTotal, PlayerPrev, MerchantPrev);
+
+		const int32 CurrentLineCost = ExistingLine ? FMath::Max(0, ExistingLine->UnitPrice) * FMath::Max(0, ExistingLine->Quantity) : 0;
+		const int32 BuyWithoutThis = FMath::Max(0, BuyTotal - CurrentLineCost);
+		const int32 ProposedBuyTotal = BuyWithoutThis + (UnitPrice * ProposedQty);
+
+		const int32 PlayerStart = Stats->GetCurrency();
+		const int32 ProspectivePlayer = PlayerStart + SellTotal - ProposedBuyTotal;
+		if (ProspectivePlayer < 0)
+		{
+			return false;
+		}
+	}
+	else
+	{
+		ProposedQty = FMath::Max(0, ProposedQty);
+	}
+
+	if (ProposedQty <= 0)
+	{
+		BuyCart.Remove(Entry.Item);
+		SlotWidget->SetSelected(false);
+		return true;
 	}
 
 	FBuyLine NewLine;
 	NewLine.Item = Entry.Item;
-	NewLine.Quantity = NextQty;
+	NewLine.Quantity = ProposedQty;
 	NewLine.UnitPrice = UnitPrice;
-
 	BuyCart.Add(Entry.Item, NewLine);
 
-	if (VisibleMerchantSlots.IsValidIndex(MerchantSlotIndex) && VisibleMerchantSlots[MerchantSlotIndex].IsValid())
-	{
-		VisibleMerchantSlots[MerchantSlotIndex]->SetSelected(true);
-	}
-
-	return true;
+	SlotWidget->SetSelectedTradeQuantity(ProposedQty);
+	return ProposedQty != CurrentQty;
 }
 
 void UPlayerMenuWidget::ClearTrade()
@@ -1141,14 +1224,24 @@ void UPlayerMenuWidget::ConfirmTrade()
 		const FBuyLine& Line = Pair.Value;
 		if (!Line.Item || Line.Quantity <= 0) continue;
 
-		const int32 Cost = Line.UnitPrice * Line.Quantity;
+		int32 Cost = 0;
+		if (!Merchant->TrySellToPlayer(Line.Item, Line.Quantity, Cost))
+		{
+			continue;
+		}
+
 		if (!Stats->SpendCurrency(Cost))
 		{
 			continue;
 		}
 
-		Merchant->ModifyMerchantCurrency(+Cost);
-		Merchant->ConsumeMerchantStock(Line.Item, Line.Quantity);
+		// Commit merchant stock/currency only after player payment succeeds.
+		if (!Merchant->CompleteSellToPlayer(Line.Item, Line.Quantity, Cost))
+		{
+			// Merchant state changed between preview and commit; refund player.
+			Stats->ModifyCurrency(Cost);
+			continue;
+		}
 
 		// Default rarity for purchases (you can change this later)
 		Inventory->AddItem(Line.Item, Line.Quantity, EItemRarity::Acceptable);

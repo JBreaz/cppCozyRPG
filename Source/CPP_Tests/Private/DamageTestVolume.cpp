@@ -114,25 +114,38 @@ void ADamageTestVolume::Tick(float DeltaSeconds)
 		}
 	}
 
-	// Fire "exit" for anything that used to be inside but isn't anymore
+	// Fire "exit" for anything that used to be inside but isn't anymore.
+	// Important: collect first, then call OnBoxEnd, so we don't mutate sets while iterating.
+	TArray<ACPP_TestsCharacter*> PlayersToEnd;
+	TArray<ANPCCharacter*> NPCsToEnd;
 	{
-		for (auto It = OverlappingPlayers.CreateIterator(); It; ++It)
+		for (const TWeakObjectPtr<ACPP_TestsCharacter>& WeakPlayer : OverlappingPlayers)
 		{
-			ACPP_TestsCharacter* P = It->Get();
-			if (!IsValid(P) || !CurrentPlayers.Contains(P))
+			ACPP_TestsCharacter* P = WeakPlayer.Get();
+			if (IsValid(P) && !CurrentPlayers.Contains(P))
 			{
-				OnBoxEnd(Box, P, nullptr, 0);
+				PlayersToEnd.Add(P);
 			}
 		}
 
-		for (auto It = OverlappingNPCs.CreateIterator(); It; ++It)
+		for (const TWeakObjectPtr<ANPCCharacter>& WeakNPC : OverlappingNPCs)
 		{
-			ANPCCharacter* N = It->Get();
-			if (!IsValid(N) || !CurrentNPCs.Contains(N))
+			ANPCCharacter* N = WeakNPC.Get();
+			if (IsValid(N) && !CurrentNPCs.Contains(N))
 			{
-				OnBoxEnd(Box, N, nullptr, 0);
+				NPCsToEnd.Add(N);
 			}
 		}
+	}
+
+	for (ACPP_TestsCharacter* P : PlayersToEnd)
+	{
+		OnBoxEnd(Box, P, nullptr, 0);
+	}
+
+	for (ANPCCharacter* N : NPCsToEnd)
+	{
+		OnBoxEnd(Box, N, nullptr, 0);
 	}
 
 	// Replace sets with current (authoritative)

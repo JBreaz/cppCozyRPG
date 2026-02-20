@@ -48,6 +48,7 @@ bool UInventoryComponent::RemoveItemExact(UItemDataAsset* Item, int32 Quantity, 
 
 	const int32 Idx = FindStackIndex(Item, Rarity);
 	if (Idx == INDEX_NONE) return false;
+	if (Items[Idx].Quantity < Quantity) return false;
 
 	Items[Idx].Quantity -= Quantity;
 	if (Items[Idx].Quantity <= 0)
@@ -63,10 +64,10 @@ bool UInventoryComponent::RemoveItem(UItemDataAsset* Item, int32 Quantity)
 {
 	if (!Item || Quantity <= 0) return false;
 
-	// MVP: remove from the first matching stack (any rarity).
+	// Remove from the first matching stack that can satisfy the quantity.
 	for (int32 i = 0; i < Items.Num(); ++i)
 	{
-		if (Items[i].Item == Item)
+		if (Items[i].Item == Item && Items[i].Quantity >= Quantity)
 		{
 			const EItemRarity FoundRarity = Items[i].Rarity;
 			return RemoveItemExact(Item, Quantity, FoundRarity);
