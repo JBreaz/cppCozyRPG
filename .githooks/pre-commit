@@ -1,0 +1,138 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+
+. "$REPO_ROOT/Scripts/git-hooks/colors.sh"
+. "$REPO_ROOT/Scripts/git-hooks/hook-common.sh"
+
+HOOK_NAME="pre-commit"
+hook_trace "start argv=$*"
+hook_trace_state
+
+# Only enforce during merge/rebase contexts
+CTX="$(hook_context)"
+if [ "$CTX" = "none" ]; then
+  exit 0
+fi
+
+# Initialize / reset ledgers if needed (prevents stale approvals)
+if ! hook_reset_ledgers_for_new_context_if_needed; then
+  error "Commit blocked: binary guard ledger system failed to initialize."
+  error "Stop and contact Ronnie (guard cannot guarantee safety)."
+  exit 2
+fi
+
+RESOLVED_FILE="$(hook_resolved_file || true)"
+[ -n "${RESOLVED_FILE:-}" ] || exit 2
+[ -f "$RESOLVED_FILE" ] || : >"$RESOLVED_FILE" 2>/dev/null || true
+
+# Normalize resolved into temp (strip CR, normalize slashes, drop blanks)
+tmp_resolved="$(mktemp 2>/dev/null || true)"
+if [ -z "${tmp_resolved:-}" ]; then
+  tmp_resolved="$(hook_git_path ".ue_resolved_tmp_$$" || true)"
+fi
+[ -n "${tmp_resolved:-}" ] || exit 2
+tr -d '\r' <"$RESOLVED_FILE" | tr '\\' '/' | sed '/^[[:space:]]*$/d' | sort -u >"$tmp_resolved" 2>/dev/null || : >"$tmp_resolved"
+
+# Build REQUIRED list:
+#  A) guarded overlap candidates (covers "git add ." / conflicts vanished)
+#  B) guarded staged files (plus sidecars) - merge only
+required_tmp="$(mktemp 2>/dev/null || true)"
+if [ -z "${required_tmp:-}" ]; then
+  required_tmp="$(hook_git_path ".ue_required_tmp_$$" || true)"
+fi
+[ -n "${required_tmp:-}" ] || exit 2
+: >"$required_tmp" 2>/dev/null || true
+
+# A) overlap
+hook_list_required_guarded_unmerged_and_overlap 2>/dev/null >>"$required_tmp" || true
+
+# B) staged guarded + sidecars (merge only; rebase uses overlap/unmerged)
+if [ "$CTX" != "rebase" ]; then
+  STAGED="$(git diff --cached --name-only 2>/dev/null || true)"
+  if [ -n "${STAGED:-}" ]; then
+    printf '%s\n' "$STAGED" | hook_list_guarded_from_stdin | while IFS= read -r f; do
+      [ -n "${f:-}" ] || continue
+      hook_norm_path "$f"; echo
+      hook_emit_unreal_sidecars_if_present "$f" | while IFS= read -r sc; do
+        [ -n "${sc:-}" ] || continue
+        hook_norm_path "$sc"; echo
+      done
+    done >>"$required_tmp" 2>/dev/null || true
+  fi
+fi
+
+sort -u "$required_tmp" 2>/dev/null >"$required_tmp.sorted" || : >"$required_tmp.sorted"
+mv -f "$required_tmp.sorted" "$required_tmp" 2>/dev/null || true
+required="$(cat "$required_tmp" 2>/dev/null || true)"
+
+lfs_tracked_tmp="$(mktemp 2>/dev/null || true)"
+if [ -z "${lfs_tracked_tmp:-}" ]; then
+  lfs_tracked_tmp="$(hook_git_path ".ue_lfs_tracked_tmp_$$" || true)"
+fi
+[ -n "${lfs_tracked_tmp:-}" ] || exit 2
+if [ -n "${required:-}" ]; then
+  printf '%s\n' "$required" | hook_list_lfs_tracked_from_stdin >"$lfs_tracked_tmp" 2>/dev/null || : >"$lfs_tracked_tmp"
+else
+  : >"$lfs_tracked_tmp"
+fi
+
+# Safety checks (pointers/markers)
+unsafe=""
+if [ -n "${required:-}" ]; then
+  while IFS= read -r f; do
+    [ -n "${f:-}" ] || continue
+    if grep -Fxq "$f" "$lfs_tracked_tmp" 2>/dev/null; then
+      :
+    elif hook_staged_content_is_lfs_pointer "$f"; then
+      unsafe="${unsafe}\n${f} (STAGED content is an LFS pointer)"
+    elif hook_working_tree_is_lfs_pointer "$f"; then
+      unsafe="${unsafe}\n${f} (working tree is an LFS pointer)"
+    elif hook_has_conflict_markers "$f"; then
+      unsafe="${unsafe}\n${f} (contains conflict markers)"
+    fi
+  done <<EOF
+$required
+EOF
+fi
+
+if [ -n "${unsafe:-}" ]; then
+  error "Commit blocked: unsafe guarded binary file(s) detected."
+  printf '%b\n' "$unsafe" | sed '/^[[:space:]]*$/d' | sed 's/^/  - /'
+  echo ""
+  echo "Fix:"
+  echo "  git lfs pull"
+  echo "  git lfs checkout -- <file>"
+  echo ""
+  echo "Then resolve via helpers:"
+  hook_print_resolution_instructions
+  rm -f "$tmp_resolved" "$required_tmp" "$lfs_tracked_tmp" 2>/dev/null || true
+  exit 1
+fi
+
+# Approval enforcement: every REQUIRED file must appear in resolved ledger
+missing_tmp="$(mktemp 2>/dev/null || true)"
+if [ -z "${missing_tmp:-}" ]; then
+  missing_tmp="$(hook_git_path ".ue_missing_tmp_$$" || true)"
+fi
+[ -n "${missing_tmp:-}" ] || exit 2
+
+if [ -n "${required:-}" ]; then
+  comm -23 "$required_tmp" "$tmp_resolved" 2>/dev/null | sed '/^[[:space:]]*$/d' >"$missing_tmp" || : >"$missing_tmp"
+else
+  : >"$missing_tmp"
+fi
+
+missing="$(cat "$missing_tmp" 2>/dev/null || true)"
+
+rm -f "$tmp_resolved" "$required_tmp" "$missing_tmp" "$lfs_tracked_tmp" 2>/dev/null || true
+
+if [ -n "${missing:-}" ]; then
+  error "Commit blocked: guarded binary file(s) require helper approval."
+  printf '%b\n' "$missing" | sed '/^[[:space:]]*$/d' | sed 's/^/  - /'
+  hook_print_resolution_instructions
+  exit 1
+fi
+
+exit 0

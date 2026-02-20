@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+. "$REPO_ROOT/Scripts/git-hooks/colors.sh"
+. "$REPO_ROOT/Scripts/git-hooks/hook-common.sh"
+
+HOOK_NAME="post-rewrite"
+hook_trace "start argv=$*"
+hook_trace_state
+
+# Clean up REBASE_HEAD if rebase is truly finished
+hook_cleanup_stale_rebase_markers
+
+# Print guidance if needed
+hook_reset_ledgers_for_new_context_if_needed || true
+if hook_should_show_guard_guidance; then
+  hook_print_required_if_any || true
+fi
+
+OLDREV="$(git rev-parse ORIG_HEAD 2>/dev/null || true)"
+NEWREV="$(git rev-parse HEAD 2>/dev/null || true)"
+hook_run_unrealsync "$OLDREV" "$NEWREV" 1
+exit $?
