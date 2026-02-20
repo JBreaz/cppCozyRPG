@@ -181,9 +181,8 @@ private:
 	UPROPERTY() TArray<TWeakObjectPtr<UInventorySlotWidget>> VisiblePlayerSlots;
 	UPROPERTY() TArray<TWeakObjectPtr<UInventorySlotWidget>> VisibleMerchantSlots;
 
-	// Hover + detail lock
+	// Hover-driven details
 	UPROPERTY() TWeakObjectPtr<UInventorySlotWidget> HoveredSlotWidget;
-	UPROPERTY() TWeakObjectPtr<UInventorySlotWidget> DetailLockedSlotWidget;
 
 	// Merchant context
 	TWeakObjectPtr<ANPCCharacter> ActiveMerchant;
@@ -231,7 +230,11 @@ private:
 	UFUNCTION() void HandleSlotHovered(UInventorySlotWidget* HoveredWidget);
 	UFUNCTION() void HandleSlotUnhovered(UInventorySlotWidget* UnhoveredWidget);
 	UFUNCTION() void HandlePlayerSlotClicked(UInventorySlotWidget* ClickedWidget);
+	UFUNCTION() void HandlePlayerSlotAddClicked(UInventorySlotWidget* ClickedWidget);
+	UFUNCTION() void HandlePlayerSlotSubClicked(UInventorySlotWidget* ClickedWidget);
 	UFUNCTION() void HandleMerchantSlotClicked(UInventorySlotWidget* ClickedWidget);
+	UFUNCTION() void HandleMerchantSlotAddClicked(UInventorySlotWidget* ClickedWidget);
+	UFUNCTION() void HandleMerchantSlotSubClicked(UInventorySlotWidget* ClickedWidget);
 
 	// UI refresh
 	void RefreshStatsText();
@@ -253,8 +256,8 @@ private:
 	void RecomputeTradePreview(int32& OutSellTotal, int32& OutBuyTotal, int32& OutPlayerPreview, int32& OutMerchantPreview) const;
 	void UpdateCurrencyUI();
 
-	bool ToggleSellFromPlayerSlot(UInventorySlotWidget* SlotWidget);
-	bool CycleBuyFromMerchantSlot(int32 MerchantSlotIndex);
+	bool AdjustSellCartQuantity(UInventorySlotWidget* SlotWidget, int32 DeltaQty);
+	bool AdjustBuyCartQuantity(UInventorySlotWidget* SlotWidget, int32 DeltaQty);
 
 	int32 GetRaritySellValue(UItemDataAsset* Item, int32 Quantity, EItemRarity Rarity) const;
 	float GetRarityMultiplier(EItemRarity Rarity) const;

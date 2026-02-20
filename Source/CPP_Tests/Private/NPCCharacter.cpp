@@ -1603,7 +1603,7 @@ bool ANPCCharacter::TrySellToPlayer(UItemDataAsset* Item, int32 Quantity, int32&
 		return false;
 	}
 
-	FMerchantInventoryEntry& Entry = MerchantInventoryRuntime[Index];
+	const FMerchantInventoryEntry& Entry = MerchantInventoryRuntime[Index];
 
 	if (RelationshipLevel < Entry.MinRelationship)
 	{
@@ -1621,13 +1621,47 @@ bool ANPCCharacter::TrySellToPlayer(UItemDataAsset* Item, int32 Quantity, int32&
 		return false;
 	}
 
+	OutCost = Cost;
+	return true;
+}
+
+bool ANPCCharacter::CompleteSellToPlayer(UItemDataAsset* Item, int32 Quantity, int32 PaidCost)
+{
+	if (!CanTrade() || !Item || Quantity <= 0 || PaidCost <= 0)
+	{
+		return false;
+	}
+
+	const int32 Index = FindMerchantEntryIndex_Runtime(Item);
+	if (Index == INDEX_NONE)
+	{
+		return false;
+	}
+
+	FMerchantInventoryEntry& Entry = MerchantInventoryRuntime[Index];
+
+	if (RelationshipLevel < Entry.MinRelationship)
+	{
+		return false;
+	}
+
+	if (!Entry.bInfiniteStock && Entry.Stock < Quantity)
+	{
+		return false;
+	}
+
+	const int32 ExpectedCost = Entry.BuyPrice * Quantity;
+	if (ExpectedCost <= 0 || PaidCost != ExpectedCost)
+	{
+		return false;
+	}
+
 	if (!Entry.bInfiniteStock)
 	{
 		Entry.Stock = FMath::Max(0, Entry.Stock - Quantity);
 	}
 
-	ModifyMerchantCurrency(+Cost);
-	OutCost = Cost;
+	ModifyMerchantCurrency(+PaidCost);
 	return true;
 }
 

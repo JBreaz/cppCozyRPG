@@ -3,6 +3,7 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Components/Widget.h"
 #include "ItemDataAsset.h"
 #include "GameFramework/PlayerController.h"
 
@@ -19,11 +20,25 @@ void UInventorySlotWidget::NativeOnInitialized()
 		SlotButton->OnClicked.AddDynamic(this, &UInventorySlotWidget::HandleClicked);
 	}
 
+	if (BTN_Add)
+	{
+		BTN_Add->OnClicked.AddDynamic(this, &UInventorySlotWidget::HandleAddClicked);
+	}
+
+	if (BTN_Sub)
+	{
+		BTN_Sub->OnClicked.AddDynamic(this, &UInventorySlotWidget::HandleSubClicked);
+	}
+
 	bSelected = false;
+	bTradeModeEnabled = false;
+	bTradeQuantityPickerEnabled = true;
+	SelectedTradeQuantity = 0;
 	bHasFocusVisual = false;
 	bHasHoverVisual = false;
 	bEffectiveHover = false;
 
+	UpdateTradeQuantityVisual();
 	UpdateVisualState();
 }
 
@@ -66,7 +81,44 @@ void UInventorySlotWidget::SetupSlot(UItemDataAsset* InItem, int32 InQuantity, E
 void UInventorySlotWidget::SetSelected(bool bInSelected)
 {
 	bSelected = bInSelected;
+
+	if (!bSelected)
+	{
+		SelectedTradeQuantity = 0;
+	}
+
+	UpdateTradeQuantityVisual();
 	UpdateVisualState();
+}
+
+void UInventorySlotWidget::SetTradeModeEnabled(bool bEnabled)
+{
+	bTradeModeEnabled = bEnabled;
+
+	if (!bTradeModeEnabled)
+	{
+		SelectedTradeQuantity = 0;
+	}
+
+	UpdateTradeQuantityVisual();
+}
+
+void UInventorySlotWidget::SetTradeQuantityPickerEnabled(bool bEnabled)
+{
+	bTradeQuantityPickerEnabled = bEnabled;
+	UpdateTradeQuantityVisual();
+}
+
+void UInventorySlotWidget::SetSelectedTradeQuantity(int32 NewQty)
+{
+	SelectedTradeQuantity = FMath::Max(0, NewQty);
+	UpdateTradeQuantityVisual();
+}
+
+void UInventorySlotWidget::ResetTradeQuantity()
+{
+	SelectedTradeQuantity = 0;
+	UpdateTradeQuantityVisual();
 }
 
 void UInventorySlotWidget::FocusSlot()
@@ -114,6 +166,40 @@ void UInventorySlotWidget::HandleUnhovered()
 void UInventorySlotWidget::HandleClicked()
 {
 	OnSlotClicked.Broadcast(this);
+}
+
+void UInventorySlotWidget::HandleAddClicked()
+{
+	OnSlotAddClicked.Broadcast(this);
+}
+
+void UInventorySlotWidget::HandleSubClicked()
+{
+	OnSlotSubClicked.Broadcast(this);
+}
+
+void UInventorySlotWidget::UpdateTradeQuantityVisual()
+{
+	const bool bShowTradeQty = bTradeModeEnabled && bSelected && bTradeQuantityPickerEnabled;
+
+	if (HB_QtySelection)
+	{
+		HB_QtySelection->SetVisibility(bShowTradeQty ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
+	if (SellQtyText)
+	{
+		if (bShowTradeQty)
+		{
+			SellQtyText->SetVisibility(ESlateVisibility::HitTestInvisible);
+			SellQtyText->SetText(FText::AsNumber(SelectedTradeQuantity));
+		}
+		else
+		{
+			SellQtyText->SetVisibility(ESlateVisibility::Collapsed);
+			SellQtyText->SetText(FText::GetEmpty());
+		}
+	}
 }
 
 void UInventorySlotWidget::UpdateEffectiveHover()
