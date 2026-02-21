@@ -74,7 +74,16 @@ function Remove-IfExists {
   $attempt = 0
   while ($true) {
     try {
-      Remove-Item $Path -Recurse -Force -ErrorAction Stop
+      # Some hosts leave stale progress rows after large recursive deletes.
+      # Suppress progress for cleanup to keep hook/manual output stable.
+      $oldProgressPreference = $ProgressPreference
+      try {
+        $ProgressPreference = "SilentlyContinue"
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+      }
+      finally {
+        $ProgressPreference = $oldProgressPreference
+      }
       return $true
     }
     catch {

@@ -7,11 +7,13 @@
 #   pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1 -SkipUnrealSync
 #   pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1 -NoBuild
 #   pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1 -SkipLfsPull
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1 -SkipShellAliases
 
 [CmdletBinding()]
 param(
   [switch]$SkipLfsPull,
   [switch]$SkipUnrealSync,
+  [switch]$SkipShellAliases,
   [switch]$NoBuild,
   [switch]$NoRegen,
 
@@ -113,7 +115,8 @@ $requiredShared = @(
 
 $requiredHelpers = @(
   "Scripts\git-tools\conflicts.ps1",
-  "Scripts\git-tools\GitConflictHelpers.ps1"
+  "Scripts\git-tools\GitConflictHelpers.ps1",
+  "Scripts\Unreal\UESyncShellAliases.ps1"
 )
 
 $requiredTests = @(
@@ -130,6 +133,9 @@ if ($missing.Count -gt 0) {
   $missing | Sort-Object -Unique | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
   throw "Required files are missing. Pull latest changes and re-run Init-Repo."
 }
+
+$ueSyncAliasHelpers = Join-Path $repoRoot "Scripts\Unreal\UESyncShellAliases.ps1"
+. $ueSyncAliasHelpers
 
 # --- Mark hook scripts and shared sh scripts executable in the index (best-effort) ---
 Info "Ensuring hooks + shared hook scripts are marked executable in git index..."
@@ -176,6 +182,28 @@ Write-Host "  usage: git ours <patterns...>" -ForegroundColor Green
 Write-Host "  usage: git theirs <patterns...>" -ForegroundColor Green
 Write-Host "  usage: git conflicts <status|sync|continue|abort|restart|help>" -ForegroundColor Green
 
+# --- Configure shell aliases for manual UnrealSync ---
+if ($SkipShellAliases) {
+  Warn "Skipping shell alias install (SkipShellAliases set)."
+}
+else {
+  Info "Configuring PowerShell alias: ue-tools ..."
+  try {
+    $aliasInstall = Install-UEToolsShellAliases
+    Ok "PowerShell aliases installed."
+    Write-Host "  profile: $($aliasInstall.ProfilePath)" -ForegroundColor Green
+    Write-Host "  function: $($aliasInstall.FunctionName)" -ForegroundColor Green
+    Write-Host "  usage: ue-tools help" -ForegroundColor Green
+    Write-Host "  usage: ue-tools build -DryRun" -ForegroundColor Green
+    Write-Host "  usage: ue-tools build -NoBuild -NoRegen" -ForegroundColor Green
+    Warn "Open a new PowerShell session (or run: . `"$($aliasInstall.ProfilePath)`") to load aliases."
+  }
+  catch {
+    Warn "Could not install PowerShell aliases for UnrealSync."
+    Warn $_.Exception.Message
+  }
+}
+
 # --- Hook self-test ---
 $hookTest = Join-Path $repoRoot "Scripts\git-hooks\Test-Hooks.ps1"
 Info "Running hook self-test..."
@@ -215,3 +243,4 @@ Info "Next steps:"
 Write-Host "  - Open repo folder in VS Code" -ForegroundColor Cyan
 Write-Host "  - Verify hooks by attempting a small commit" -ForegroundColor Cyan
 Write-Host "  - During merge/rebase conflicts, use: git ours / git theirs" -ForegroundColor Cyan
+Write-Host "  - Run Unreal tools manually with: ue-tools help" -ForegroundColor Cyan
