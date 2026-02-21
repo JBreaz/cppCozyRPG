@@ -707,10 +707,8 @@ bool ASeasonWorldManager::IsFoliageInstanceObserved(UHierarchicalInstancedStatic
 
 	const FVector ToInstance = InstanceLocation - CameraLocation;
 	const float DistanceToInstance = ToInstance.Size();
-	if (DistanceToInstance <= FMath::Max(WorldSphereRadius, FoliageAlwaysObservedDistanceCm))
-	{
-		return true;
-	}
+	const float CloseObservedDistance = FMath::Max(WorldSphereRadius, FoliageAlwaysObservedDistanceCm);
+	const bool bWithinCloseObservedDistance = DistanceToInstance <= CloseObservedDistance;
 
 	if (ToInstance.IsNearlyZero())
 	{
@@ -719,7 +717,13 @@ bool ASeasonWorldManager::IsFoliageInstanceObserved(UHierarchicalInstancedStatic
 
 	const float FacingDot = FVector::DotProduct(CameraRotation.Vector(), ToInstance / DistanceToInstance);
 	const float AngularSlack = FMath::Clamp(WorldSphereRadius / FMath::Max(1.0f, DistanceToInstance), 0.0f, 1.0f);
-	const float EffectiveFrontDotThreshold = ObservedFrontDotThreshold - AngularSlack;
+	float EffectiveFrontDotThreshold = ObservedFrontDotThreshold - AngularSlack;
+	if (bWithinCloseObservedDistance)
+	{
+		// Relax front-angle check when very close so visible near-edge foliage doesn't pop,
+		// while still allowing behind-the-player instances to be considered unobserved.
+		EffectiveFrontDotThreshold -= 0.15f;
+	}
 	if (FacingDot < EffectiveFrontDotThreshold)
 	{
 		return false;
@@ -748,7 +752,12 @@ bool ASeasonWorldManager::IsFoliageInstanceObserved(UHierarchicalInstancedStatic
 		ProjectedRadiusPixels = FMath::Abs(ScreenRightOffset.X - ScreenCenter.X);
 	}
 	ProjectedRadiusPixels = FMath::Max(ProjectedRadiusPixels, FoliageMinProjectedRadiusPixels);
-	const float ScreenPadding = ProjectedRadiusPixels + FoliageScreenEdgePaddingPixels;
+
+	const float NearAlpha = bWithinCloseObservedDistance
+		? (1.0f - FMath::Clamp(DistanceToInstance / FMath::Max(KINDA_SMALL_NUMBER, CloseObservedDistance), 0.0f, 1.0f))
+		: 0.0f;
+	const float ScreenPadding = (ProjectedRadiusPixels + FoliageScreenEdgePaddingPixels)
+		+ (NearAlpha * (ProjectedRadiusPixels + FoliageScreenEdgePaddingPixels));
 
 	if (ScreenCenter.X < -ScreenPadding || ScreenCenter.Y < -ScreenPadding
 		|| ScreenCenter.X > static_cast<float>(ViewportX) + ScreenPadding

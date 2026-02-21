@@ -80,88 +80,88 @@ public:
 	FOnActiveTimeOfDayChangedSignature OnActiveTimeOfDayChanged;
 
 protected:
-	UPROPERTY(EditAnywhere, Category = "Season|Clock", meta = (ClampMin = "0.05"))
+	UPROPERTY(EditAnywhere, Category = "Season|Clock", meta = (ClampMin = "0.05", ToolTip = "How often (seconds) to poll device date/time and recompute global season/time."))
 	float DevicePollIntervalSeconds = 1.0f;
 
-	UPROPERTY(EditInstanceOnly, Category = "Season|Lighting")
+	UPROPERTY(EditInstanceOnly, Category = "Season|Lighting", meta = (ToolTip = "Directional Light actor used as the sun for time-of-day pitch updates."))
 	TObjectPtr<ADirectionalLight> SunDirectionalLight = nullptr;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Lighting", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, Category = "Season|Lighting", meta = (ClampMin = "0.0", ToolTip = "Blend duration (seconds) when sun pitch changes between times/zones."))
 	float SunPitchLerpSeconds = 2.0f;
 
 	// Design rule: hour 12.0 (noon) maps to this pitch.
-	UPROPERTY(EditAnywhere, Category = "Season|Lighting")
+	UPROPERTY(EditAnywhere, Category = "Season|Lighting", meta = (ToolTip = "Sun pitch at 12:00 (noon). Other hours are offset from this by 15 degrees per hour."))
 	float SunPitchAtNoon = -90.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Debug")
+	UPROPERTY(EditAnywhere, Category = "Season|Debug", meta = (ToolTip = "Log warnings when MPC assignment/parameter writes fail."))
 	bool bLogMPCWriteFailures = true;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "-1.0", ClampMax = "1.0", ToolTip = "Dot-product threshold for considering something in front of the camera (higher = stricter)."))
 	float ObservedFrontDotThreshold = 0.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0", Units = "cm"))
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0", Units = "cm", ToolTip = "Distance where near foliage gets extra observation tolerance to reduce visible popping."))
 	float FoliageAlwaysObservedDistanceCm = 250.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0", ToolTip = "Extra screen-edge margin (pixels) where foliage is still considered observed."))
 	float FoliageScreenEdgePaddingPixels = 24.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0", ToolTip = "Minimum projected foliage radius (pixels) used in edge-observation checks."))
 	float FoliageMinProjectedRadiusPixels = 16.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Observation")
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ToolTip = "If enabled, observation requires a visibility trace from camera to target."))
 	bool bUseOcclusionTrace = false;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Observation")
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ToolTip = "Trace channel used for optional occlusion checks and anchor traces."))
 	TEnumAsByte<ECollisionChannel> ObservationTraceChannel = ECC_Visibility;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Materials")
+	UPROPERTY(EditAnywhere, Category = "Season|Materials", meta = (ToolTip = "Material Parameter Collection that receives season/time globals at runtime."))
 	TObjectPtr<UMaterialParameterCollection> SeasonParameterCollection = nullptr;
 
 	// If true, the season/color values written to MPC are held until the player looks away.
-	UPROPERTY(EditAnywhere, Category = "Season|Materials")
+	UPROPERTY(EditAnywhere, Category = "Season|Materials", meta = (ToolTip = "Delay observed season/color MPC swap until the player is no longer observing relevant visuals."))
 	bool bDeferMPCSeasonVisualSwap = true;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Materials")
+	UPROPERTY(EditAnywhere, Category = "Season|Materials", meta = (ToolTip = "MPC scalar parameter name for the global (device/active rule) season index."))
 	FName MPC_GlobalSeasonIndexParam = TEXT("GlobalSeasonIndex");
 
-	UPROPERTY(EditAnywhere, Category = "Season|Materials")
+	UPROPERTY(EditAnywhere, Category = "Season|Materials", meta = (ToolTip = "MPC scalar parameter name for deferred observed season index used by materials."))
 	FName MPC_ObservedSeasonIndexParam = TEXT("ObservedSeasonIndex");
 
-	UPROPERTY(EditAnywhere, Category = "Season|Materials")
+	UPROPERTY(EditAnywhere, Category = "Season|Materials", meta = (ToolTip = "MPC scalar parameter name for active time-of-day hours (0-24)."))
 	FName MPC_ActiveTimeOfDayParam = TEXT("ActiveTimeOfDayHours");
 
-	UPROPERTY(EditAnywhere, Category = "Season|Materials")
+	UPROPERTY(EditAnywhere, Category = "Season|Materials", meta = (ToolTip = "MPC vector parameter name for deferred observed season color."))
 	FName MPC_ObservedSeasonColorParam = TEXT("ObservedSeasonColor");
 
-	UPROPERTY(EditAnywhere, Category = "Season|Foliage")
+	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ToolTip = "Enable per-instance deferred season swaps for HISM/Foliage Tool instances."))
 	bool bEnableFoliageInstanceSeasonSwap = true;
 
 	// Custom data float slot used by foliage/HISM materials for observed season index.
-	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ClampMin = "0", ToolTip = "PerInstanceCustomData slot index where observed season index is written for foliage instances."))
 	int32 FoliageObservedSeasonCustomDataIndex = 0;
 
 	// If true, any HISM component in the world is treated as seasonal foliage.
-	UPROPERTY(EditAnywhere, Category = "Season|Foliage")
+	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ToolTip = "If true, all HISM components are treated as seasonal foliage; if false, only tagged components are used."))
 	bool bTreatAllHISMAsSeasonalFoliage = true;
 
 	// Used only when bTreatAllHISMAsSeasonalFoliage=false.
-	UPROPERTY(EditAnywhere, Category = "Season|Foliage")
+	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ToolTip = "Component tag required for seasonal foliage when 'Treat All HISM As Seasonal Foliage' is false."))
 	FName SeasonalFoliageComponentTag = TEXT("SeasonalFoliage");
 
 	// Max pending foliage instances processed per tick.
-	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, Category = "Season|Foliage", meta = (ClampMin = "1", ToolTip = "Maximum pending foliage instances applied per tick (higher = faster catch-up, more CPU)."))
 	int32 FoliageDeferredApplyBatchSize = 512;
 
-	UPROPERTY(EditAnywhere, Category = "Season|Colors")
+	UPROPERTY(EditAnywhere, Category = "Season|Colors", meta = (ToolTip = "Color used for Spring in observed season color outputs."))
 	FLinearColor SpringColor = FLinearColor(0.14f, 0.72f, 0.18f, 1.0f);
 
-	UPROPERTY(EditAnywhere, Category = "Season|Colors")
+	UPROPERTY(EditAnywhere, Category = "Season|Colors", meta = (ToolTip = "Color used for Summer in observed season color outputs."))
 	FLinearColor SummerColor = FLinearColor(0.95f, 0.85f, 0.20f, 1.0f);
 
-	UPROPERTY(EditAnywhere, Category = "Season|Colors")
+	UPROPERTY(EditAnywhere, Category = "Season|Colors", meta = (ToolTip = "Color used for Fall in observed season color outputs."))
 	FLinearColor FallColor = FLinearColor(0.95f, 0.45f, 0.08f, 1.0f);
 
-	UPROPERTY(EditAnywhere, Category = "Season|Colors")
+	UPROPERTY(EditAnywhere, Category = "Season|Colors", meta = (ToolTip = "Color used for Winter in observed season color outputs."))
 	FLinearColor WinterColor = FLinearColor(0.15f, 0.45f, 1.0f, 1.0f);
 
 private:
