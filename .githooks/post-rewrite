@@ -9,6 +9,14 @@ HOOK_NAME="post-rewrite"
 hook_trace "start argv=$*"
 hook_trace_state
 
+# post-rewrite can run for multiple rewrite operations.
+# Only run UnrealSync for completed rebase flows.
+REWRITE_OP="${1:-}"
+if [ "$REWRITE_OP" != "rebase" ]; then
+  hook_trace "skip UnrealSync: post-rewrite op=$REWRITE_OP"
+  exit 0
+fi
+
 # Clean up REBASE_HEAD if rebase is truly finished
 hook_cleanup_stale_rebase_markers
 

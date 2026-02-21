@@ -289,9 +289,11 @@ try {
 
   Step "Case 5: Hook suppression contract avoids duplicate UE Sync runs"
   $postCheckoutPath = Join-Path $repoRoot ".githooks\post-checkout"
+  $postRewritePath = Join-Path $repoRoot ".githooks\post-rewrite"
   $hookCommonPath = Join-Path $repoRoot "Scripts\git-hooks\hook-common.sh"
 
   $postCheckoutText = Get-Content -LiteralPath $postCheckoutPath -Raw
+  $postRewriteText = Get-Content -LiteralPath $postRewritePath -Raw
   $hookCommonText = Get-Content -LiteralPath $hookCommonPath -Raw
 
   Assert-Condition `
@@ -318,6 +320,15 @@ try {
     -Condition ($runCount -eq 1) `
     -PassDetail "hook_run_unrealsync calls=$runCount" `
     -FailDetail "expected 1 hook_run_unrealsync call in post-checkout, found $runCount"
+
+  Assert-Condition `
+    -Name "UE Sync case 5 post-rewrite only allows rebase" `
+    -Condition (
+      $postRewriteText -match 'REWRITE_OP="\$\{1:-\}"' -and
+      $postRewriteText -match '\[ "\$REWRITE_OP" != "rebase" \]' -and
+      $postRewriteText -match 'skip UnrealSync: post-rewrite op=\$REWRITE_OP'
+    ) `
+    -FailDetail "post-rewrite missing rebase-only guard before UnrealSync invocation"
 
   Step "Case 6: Structural change detection with DryRun"
   $structRel = "Source/Ghost_Game/UE_Sync_TestTmp_$((Get-Date).ToString('HHmmss')).cpp"
