@@ -82,13 +82,35 @@ function Write-TextFileLf {
 function Invoke-Git {
   param(
     [Parameter(Mandatory)][string[]]$Args,
-    [switch]$AllowFail
+    [switch]$AllowFail,
+    [bool]$SuppressUESync = $true
   )
 
   $display = "git " + ($Args -join " ")
   Write-Log ">> $display" DarkGray
-  $out = @(& git @Args 2>&1)
-  $code = $LASTEXITCODE
+
+  $hadSuppress = Test-Path Env:UE_SYNC_SUPPRESS
+  $prevSuppress = $null
+
+  if ($SuppressUESync) {
+    if ($hadSuppress) { $prevSuppress = $env:UE_SYNC_SUPPRESS }
+    $env:UE_SYNC_SUPPRESS = "1"
+  }
+
+  try {
+    $out = @(& git @Args 2>&1)
+    $code = $LASTEXITCODE
+  }
+  finally {
+    if ($SuppressUESync) {
+      if ($hadSuppress) {
+        $env:UE_SYNC_SUPPRESS = $prevSuppress
+      }
+      else {
+        Remove-Item Env:UE_SYNC_SUPPRESS -ErrorAction SilentlyContinue
+      }
+    }
+  }
 
   foreach ($line in $out) {
     $text = "$line"
@@ -320,6 +342,11 @@ try {
     -Condition ($runCount -eq 1) `
     -PassDetail "hook_run_unrealsync calls=$runCount" `
     -FailDetail "expected 1 hook_run_unrealsync call in post-checkout, found $runCount"
+
+  Assert-Condition `
+    -Name "UE Sync case 5 hook-common avoids hard-wired /dev/tty redirection" `
+    -Condition ($hookCommonText -notmatch '</dev/tty\s*>/dev/tty') `
+    -FailDetail "hook-common hook_run_unrealsync still hard-wires /dev/tty redirection"
 
   Assert-Condition `
     -Name "UE Sync case 5 post-rewrite only allows rebase" `
