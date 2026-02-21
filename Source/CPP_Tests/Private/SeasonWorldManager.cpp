@@ -15,6 +15,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "Math/RotationMatrix.h"
 
 ASeasonWorldManager::ASeasonWorldManager()
 {
@@ -468,7 +469,7 @@ void ASeasonWorldManager::ProcessDeferredMPCSeasonVisual()
 
 	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
 
-	if (PendingSeasonByActor.Num() > 0 || PendingSeasonByFoliageInstance.Num() > 0)
+	if (PendingSeasonByActor.Num() > 0)
 	{
 		return;
 	}
@@ -531,11 +532,6 @@ AActor* ASeasonWorldManager::GetCurrentViewAnchorActor(APlayerController* Player
 
 bool ASeasonWorldManager::HasAnyObservedSeasonalActor(APlayerController* PlayerController) const
 {
-	if (PendingSeasonByFoliageInstance.Num() > 0)
-	{
-		return true;
-	}
-
 	for (const TWeakObjectPtr<AActor>& WeakActor : SeasonalActors)
 	{
 		AActor* Actor = WeakActor.Get();
@@ -599,8 +595,7 @@ void ASeasonWorldManager::RefreshSeasonalFoliageComponents()
 
 			if (Component->NumCustomDataFloats <= FoliageObservedSeasonCustomDataIndex)
 			{
-				Component->NumCustomDataFloats = FoliageObservedSeasonCustomDataIndex + 1;
-				Component->MarkRenderStateDirty();
+				Component->SetNumCustomDataFloats(FoliageObservedSeasonCustomDataIndex + 1);
 			}
 
 			SeasonalFoliageComponents.Add(Component);
@@ -692,26 +687,46 @@ bool ASeasonWorldManager::IsFoliageInstanceObserved(UHierarchicalInstancedStatic
 		return false;
 	}
 
-	const FVector InstanceLocation = InstanceTransform.GetLocation();
+	const UStaticMesh* StaticMesh = Component->GetStaticMesh();
+	FVector LocalBoundsOrigin = FVector::ZeroVector;
+	float LocalSphereRadius = 50.0f;
+	if (IsValid(StaticMesh))
+	{
+		const FBoxSphereBounds MeshBounds = StaticMesh->GetBounds();
+		LocalBoundsOrigin = MeshBounds.Origin;
+		LocalSphereRadius = FMath::Max(1.0f, MeshBounds.SphereRadius);
+	}
+
+	const FVector InstanceLocation = InstanceTransform.TransformPosition(LocalBoundsOrigin);
+	const float InstanceScale = InstanceTransform.GetScale3D().GetAbsMax();
+	const float WorldSphereRadius = FMath::Max(1.0f, LocalSphereRadius * InstanceScale);
 
 	FVector CameraLocation = FVector::ZeroVector;
 	FRotator CameraRotation = FRotator::ZeroRotator;
 	PlayerController->GetPlayerViewPoint(CameraLocation, CameraRotation);
 
 	const FVector ToInstance = InstanceLocation - CameraLocation;
+	const float DistanceToInstance = ToInstance.Size();
+	if (DistanceToInstance <= FMath::Max(WorldSphereRadius, FoliageAlwaysObservedDistanceCm))
+	{
+		return true;
+	}
+
 	if (ToInstance.IsNearlyZero())
 	{
 		return true;
 	}
 
-	const float FacingDot = FVector::DotProduct(CameraRotation.Vector(), ToInstance.GetSafeNormal());
-	if (FacingDot < ObservedFrontDotThreshold)
+	const float FacingDot = FVector::DotProduct(CameraRotation.Vector(), ToInstance / DistanceToInstance);
+	const float AngularSlack = FMath::Clamp(WorldSphereRadius / FMath::Max(1.0f, DistanceToInstance), 0.0f, 1.0f);
+	const float EffectiveFrontDotThreshold = ObservedFrontDotThreshold - AngularSlack;
+	if (FacingDot < EffectiveFrontDotThreshold)
 	{
 		return false;
 	}
 
-	FVector2D ScreenLocation = FVector2D::ZeroVector;
-	if (!PlayerController->ProjectWorldLocationToScreen(InstanceLocation, ScreenLocation, false))
+	FVector2D ScreenCenter = FVector2D::ZeroVector;
+	if (!PlayerController->ProjectWorldLocationToScreen(InstanceLocation, ScreenCenter, false))
 	{
 		return false;
 	}
@@ -725,9 +740,19 @@ bool ASeasonWorldManager::IsFoliageInstanceObserved(UHierarchicalInstancedStatic
 		return false;
 	}
 
-	if (ScreenLocation.X < 0.0f || ScreenLocation.Y < 0.0f
-		|| ScreenLocation.X > static_cast<float>(ViewportX)
-		|| ScreenLocation.Y > static_cast<float>(ViewportY))
+	const FVector CameraRight = FRotationMatrix(CameraRotation).GetUnitAxis(EAxis::Y);
+	FVector2D ScreenRightOffset = FVector2D::ZeroVector;
+	float ProjectedRadiusPixels = 0.0f;
+	if (PlayerController->ProjectWorldLocationToScreen(InstanceLocation + (CameraRight * WorldSphereRadius), ScreenRightOffset, false))
+	{
+		ProjectedRadiusPixels = FMath::Abs(ScreenRightOffset.X - ScreenCenter.X);
+	}
+	ProjectedRadiusPixels = FMath::Max(ProjectedRadiusPixels, FoliageMinProjectedRadiusPixels);
+	const float ScreenPadding = ProjectedRadiusPixels + FoliageScreenEdgePaddingPixels;
+
+	if (ScreenCenter.X < -ScreenPadding || ScreenCenter.Y < -ScreenPadding
+		|| ScreenCenter.X > static_cast<float>(ViewportX) + ScreenPadding
+		|| ScreenCenter.Y > static_cast<float>(ViewportY) + ScreenPadding)
 	{
 		return false;
 	}
@@ -776,8 +801,7 @@ void ASeasonWorldManager::ApplySeasonToFoliageInstance(UHierarchicalInstancedSta
 
 	if (Component->NumCustomDataFloats <= FoliageObservedSeasonCustomDataIndex)
 	{
-		Component->NumCustomDataFloats = FoliageObservedSeasonCustomDataIndex + 1;
-		Component->MarkRenderStateDirty();
+		Component->SetNumCustomDataFloats(FoliageObservedSeasonCustomDataIndex + 1);
 	}
 
 	const float SeasonIndex = static_cast<float>(static_cast<uint8>(Season));

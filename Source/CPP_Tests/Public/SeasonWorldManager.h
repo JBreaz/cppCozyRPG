@@ -99,6 +99,15 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float ObservedFrontDotThreshold = 0.0f;
 
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0", Units = "cm"))
+	float FoliageAlwaysObservedDistanceCm = 250.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0"))
+	float FoliageScreenEdgePaddingPixels = 24.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Season|Observation", meta = (ClampMin = "0.0"))
+	float FoliageMinProjectedRadiusPixels = 16.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Season|Observation")
 	bool bUseOcclusionTrace = false;
 
