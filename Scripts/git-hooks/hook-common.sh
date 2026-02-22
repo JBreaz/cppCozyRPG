@@ -875,7 +875,7 @@ hook_run_unrealsync() {
   fi
 
   if [ -z "${NONINTERACTIVE:-}" ] && hook_has_user_tty; then
-    "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -OldRev "$old" -NewRev "$new" -Flag "$flag" </dev/tty >/dev/tty
+    "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -OldRev "$old" -NewRev "$new" -Flag "$flag"
   else
     "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -OldRev "$old" -NewRev "$new" -Flag "$flag" $NONINTERACTIVE
   fi

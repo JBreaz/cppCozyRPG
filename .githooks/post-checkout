@@ -40,7 +40,7 @@ FINAL_OLDREV="$OLDREV"
 FINAL_NEWREV="$NEWREV"
 
 if [ "$BRANCH" = "main" ]; then
-  info "Checked out 'main' ? checking for upstream updates..."
+  info "Checked out 'main' - checking for upstream updates..."
   UE_SYNC_SUPPRESS=1 git fetch --all --prune --quiet || true
 
   UPSTREAM="@{upstream}"
@@ -55,7 +55,7 @@ if [ "$BRANCH" = "main" ]; then
       STASH_REF=""
 
       if ! git diff --quiet || ! git diff --cached --quiet; then
-        warn "Working tree is dirty ? stashing local changes before pull..."
+        warn "Working tree is dirty - stashing local changes before pull..."
         UE_SYNC_SUPPRESS=1 git stash push -u -m "auto-post-checkout-main-$(date +%s)" >/dev/null 2>&1 || true
         STASH_REF="$(UE_SYNC_SUPPRESS=1 git stash list -1 --format=%gd 2>/dev/null || true)"
       fi
